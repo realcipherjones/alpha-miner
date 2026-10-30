@@ -1,0 +1,16 @@
+# Build output (rebuilt by build.mjs / build_exe.sh)
+build/
+dist/
+
+# Windows installers ship on GitHub Releases, not in git
+*.exe
+SHA256SUMS.txt
+
+# Family reference photos stay out of the repo
+assets/reference/*.jpg
+assets/reference/*.jpeg
+assets/reference/*.heic
+
+node_modules/
+__pycache__/
+*.pyc

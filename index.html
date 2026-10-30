@@ -1,0 +1,781 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <title>α Alpha Miner - KII Blockchain</title>
+  <style>
+    /* Reset & Base Typography */
+    *, *::before, *::after {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+      user-select: none;
+      -webkit-user-select: none;
+      -webkit-touch-callout: none;
+    }
+    html, body {
+      width: 100%;
+      height: 100%;
+      overflow: hidden;
+      background-color: #0b0914;
+      color: #f8fafc;
+      font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      touch-action: manipulation;
+    }
+    body {
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+    }
+
+    /* Scrollbars */
+    ::-webkit-scrollbar {
+      height: 6px;
+      width: 6px;
+    }
+    ::-webkit-scrollbar-track {
+      background: #110e1e;
+    }
+    ::-webkit-scrollbar-thumb {
+      background: #332d4b;
+      border-radius: 999px;
+    }
+
+    /* Common Buttons & Badges */
+    button {
+      font-family: inherit;
+      cursor: pointer;
+      border: none;
+      outline: none;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 0.35rem;
+      transition: all 0.15s ease-in-out;
+    }
+    button:active {
+      transform: scale(0.96);
+    }
+
+    /* Top HUD Header */
+    header {
+      background: rgba(15, 13, 25, 0.96);
+      border-bottom: 1px solid rgba(245, 158, 11, 0.3);
+      padding: 6px 12px;
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+      z-index: 20;
+      box-shadow: 0 4px 16px rgba(0, 0, 0, 0.5);
+    }
+    .brand-section {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+    .brand-icon {
+      width: 36px;
+      height: 36px;
+      border-radius: 10px;
+      background: linear-gradient(135deg, #f59e0b, #b45309);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 1.2rem;
+      box-shadow: inset 0 1px 2px rgba(255, 255, 255, 0.4), 0 2px 8px rgba(245, 158, 11, 0.3);
+    }
+    .brand-titles h1 {
+      font-size: 0.95rem;
+      font-weight: 900;
+      letter-spacing: -0.02em;
+      color: #fde047;
+      line-height: 1.1;
+    }
+    .brand-titles p {
+      font-size: 0.72rem;
+      color: #94a3b8;
+    }
+
+    /* Map Navigation Pill Container */
+        /* Score & Wallet Pills */
+    .hud-pills {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+    .pill {
+      background: rgba(6, 5, 12, 0.92);
+      border-radius: 14px;
+      padding: 4px 10px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.6);
+    }
+    .pill-score {
+      border: 1px solid rgba(245, 158, 11, 0.4);
+    }
+    .pill-wallet {
+      border: 1px solid rgba(16, 185, 129, 0.4);
+      position: relative;
+    }
+    .pill-title {
+      font-size: 0.62rem;
+      text-transform: uppercase;
+      font-weight: 800;
+      letter-spacing: 0.05em;
+      line-height: 1;
+    }
+    .pill-score .pill-title { color: #f59e0b; }
+    .pill-wallet .pill-title { color: #10b981; }
+    .pill-value {
+      font-size: 0.92rem;
+      font-weight: 900;
+      line-height: 1.1;
+    }
+    .pill-score .pill-value { color: #fef08a; }
+    .pill-wallet .pill-value { color: #6ee7b7; }
+
+    /* Tooltip */
+    .tooltip-wrapper {
+      position: relative;
+      cursor: help;
+    }
+    .tooltip-content {
+      display: none;
+      position: absolute;
+      top: 100%;
+      right: 0;
+      margin-top: 6px;
+      background: #1e1b2e;
+      border: 1px solid #433d60;
+      border-radius: 10px;
+      padding: 8px 10px;
+      font-size: 0.72rem;
+      color: #e2e8f0;
+      white-space: nowrap;
+      z-index: 50;
+      box-shadow: 0 8px 24px rgba(0,0,0,0.7);
+    }
+    .tooltip-wrapper:hover .tooltip-content,
+    #walletPill:hover .tooltip-content {
+      display: block;
+    }
+    #walletPill {
+      position: relative;
+      cursor: help;
+    }
+
+    /* Roadmap Cash Out Button */
+    .btn-cashout {
+      background: rgba(30, 27, 46, 0.8);
+      border: 1px dashed rgba(251, 146, 60, 0.5);
+      color: #fdba74;
+      border-radius: 12px;
+      padding: 4px 8px;
+      font-size: 0.68rem;
+      font-weight: 700;
+      cursor: pointer;
+    }
+
+    /* Sub-header Jukebox Bar */
+    .jukebox-bar {
+      background: #110e1e;
+      border-bottom: 1px solid rgba(148, 163, 184, 0.15);
+      padding: 3px 12px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      font-size: 0.72rem;
+      z-index: 15;
+    }
+    .jukebox-left {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      overflow: hidden;
+      white-space: nowrap;
+    }
+    .jukebox-now {
+      color: #fda4af;
+      font-weight: 900;
+      width: 1em;
+      text-align: center;
+      flex: none;
+    }
+    .jukebox-now.playing {
+      animation: jukebox-pulse 1.2s ease-in-out infinite;
+    }
+    @keyframes jukebox-pulse {
+      50% { opacity: 0.35; }
+    }
+    .jukebox-trackno {
+      color: #64748b;
+      font-weight: 800;
+      font-variant-numeric: tabular-nums;
+      flex: none;
+    }
+    .jukebox-track {
+      font-weight: 700;
+      color: #e2e8f0;
+      text-overflow: ellipsis;
+      overflow: hidden;
+    }
+    .jukebox-meta {
+      color: #94a3b8;
+      text-overflow: ellipsis;
+      overflow: hidden;
+    }
+    .jukebox-time {
+      color: #64748b;
+      font-variant-numeric: tabular-nums;
+      flex: none;
+    }
+    .jukebox-time.hint {
+      color: #fbbf24;
+      font-weight: 700;
+    }
+    .jukebox-controls {
+      display: flex;
+      align-items: center;
+      gap: 14px;
+      flex: none;
+    }
+    .vol-control {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      color: #94a3b8;
+      font-weight: 700;
+      cursor: pointer;
+    }
+    .vol-control input[type="range"] {
+      width: 90px;
+      accent-color: #f59e0b;
+      cursor: pointer;
+    }
+    .vol-readout {
+      width: 2.2em;
+      text-align: right;
+      color: #cbd5e1;
+      font-variant-numeric: tabular-nums;
+    }
+
+    /* Main Viewport & Canvas */
+    main {
+      position: relative;
+      flex: 1;
+      width: 100%;
+      min-height: 0;
+      overflow: hidden;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: #090712;
+    }
+    #canvasContainer {
+      position: relative;
+      width: 100%;
+      height: 100%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    canvas#gameCanvas {
+      display: block;
+      width: 100%;
+      height: 100%;
+      object-fit: contain;
+      cursor: crosshair;
+      touch-action: none;
+    }
+
+    /* Range Sliders */
+    input[type="range"] {
+      -webkit-appearance: none;
+      appearance: none;
+      background: #252038;
+      height: 8px;
+      border-radius: 999px;
+      outline: none;
+      width: 100%;
+    }
+    input[type="range"]::-webkit-slider-thumb {
+      -webkit-appearance: none;
+      appearance: none;
+      width: 20px;
+      height: 20px;
+      border-radius: 50%;
+      background: #fbbf24;
+      border: 2px solid #78350f;
+      cursor: pointer;
+      box-shadow: 0 2px 6px rgba(0,0,0,0.5);
+    }
+    input[type="range"]::-moz-range-thumb {
+      width: 20px;
+      height: 20px;
+      border-radius: 50%;
+      background: #fbbf24;
+      border: 2px solid #78350f;
+      cursor: pointer;
+      box-shadow: 0 2px 6px rgba(0,0,0,0.5);
+    }
+
+    /* Bottom Tactile Control Deck */
+    footer {
+      background: #0f0d19;
+      border-top: 2px solid rgba(245, 158, 11, 0.4);
+      padding: 6px 12px;
+      z-index: 20;
+      box-shadow: 0 -4px 16px rgba(0,0,0,0.5);
+    }
+    .deck-container {
+      max-width: 1200px;
+      margin: 0 auto;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      flex-wrap: wrap;
+    }
+
+    /* Arena Controls Deck */
+    .arena-grid {
+      flex: 1;
+      display: grid;
+      grid-template-columns: repeat(3, minmax(130px, 1fr));
+      gap: 8px;
+      align-items: center;
+    }
+    .ctrl-col {
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+    }
+    .ctrl-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      font-size: 0.72rem;
+      margin-bottom: 3px;
+    }
+    .ctrl-header span:first-child { color: #94a3b8; font-weight: 700; }
+    .ctrl-header span:last-child { font-weight: 900; }
+    .ctrl-row {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .btn-tiny {
+      width: 24px;
+      height: 24px;
+      border-radius: 6px;
+      background: #1e1b2e;
+      border: 1px solid #332d4b;
+      color: #fbbf24;
+      font-weight: 800;
+      font-size: 0.8rem;
+    }
+
+    /* Presets & Primary Lob Button */
+    .lob-actions {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .btn-preset {
+      background: #181528;
+      border: 1px solid #2d264a;
+      color: #bae6fd;
+      padding: 5px 8px;
+      border-radius: 8px;
+      font-size: 0.68rem;
+      font-weight: 700;
+      white-space: nowrap;
+    }
+    .btn-lob {
+      padding: 10px 22px;
+      border-radius: 14px;
+      background: linear-gradient(135deg, #f59e0b, #d97706);
+      color: #020617;
+      font-size: 0.88rem;
+      font-weight: 900;
+      letter-spacing: 0.03em;
+      border: 1px solid #fde047;
+      box-shadow: 0 4px 14px rgba(245, 158, 11, 0.4);
+      white-space: nowrap;
+    }
+
+    /* Platformer Mobile Touch Controls */
+    .plat-controls {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      width: 100%;
+      justify-content: space-between;
+    }
+    .btn-plat-touch {
+      flex: 1;
+      padding: 10px 14px;
+      border-radius: 12px;
+      background: #1c1830;
+      border: 1px solid #383058;
+      color: #f8fafc;
+      font-size: 0.84rem;
+      font-weight: 800;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.4);
+    }
+    .btn-plat-jump {
+      background: linear-gradient(135deg, #0284c7, #0369a1);
+      border-color: #38bdf8;
+      color: #ffffff;
+    }
+
+    /* Modals */
+    .modal-backdrop {
+      position: absolute;
+      inset: 0;
+      background: rgba(11, 9, 20, 0.85);
+      backdrop-filter: blur(8px);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 16px;
+      z-index: 50;
+    }
+    .modal-card {
+      background: linear-gradient(180deg, #18142a, #0e0c18);
+      border: 2px solid #f59e0b;
+      border-radius: 24px;
+      max-width: 440px;
+      width: 100%;
+      padding: 24px;
+      text-align: center;
+      box-shadow: 0 20px 48px rgba(0,0,0,0.8);
+    }
+    .modal-badge {
+      display: inline-block;
+      padding: 3px 10px;
+      border-radius: 999px;
+      background: rgba(245, 158, 11, 0.2);
+      border: 1px solid rgba(245, 158, 11, 0.4);
+      color: #fde047;
+      font-size: 0.72rem;
+      font-weight: 800;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      margin-bottom: 8px;
+    }
+    .modal-title {
+      font-size: 1.5rem;
+      font-weight: 900;
+      color: #ffffff;
+      margin-bottom: 6px;
+    }
+    .modal-summary {
+      font-size: 0.82rem;
+      color: #cbd5e1;
+      margin-bottom: 16px;
+    }
+    .stats-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 8px;
+      background: rgba(6, 5, 12, 0.7);
+      border-radius: 14px;
+      padding: 10px;
+      border: 1px solid #231f38;
+      margin-bottom: 18px;
+    }
+    .stat-label {
+      font-size: 0.65rem;
+      color: #94a3b8;
+      font-weight: 700;
+    }
+    .stat-val {
+      font-size: 1.15rem;
+      font-weight: 900;
+    }
+    .modal-actions {
+      display: flex;
+      gap: 10px;
+    }
+    .btn-modal {
+      flex: 1;
+      padding: 10px 14px;
+      border-radius: 12px;
+      font-weight: 800;
+      font-size: 0.82rem;
+    }
+
+    /* Cash-out pop-up controller legend */
+    .cashout-legend {
+      background: rgba(6, 5, 12, 0.7);
+      border: 1px solid #231f38;
+      border-radius: 14px;
+      padding: 10px 12px;
+      margin-bottom: 16px;
+      display: grid;
+      gap: 6px;
+      text-align: left;
+      font-size: 0.8rem;
+      color: #e2e8f0;
+      font-weight: 700;
+    }
+    .cashout-legend-title {
+      font-size: 0.65rem;
+      color: #94a3b8;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+    }
+    .cashout-legend-row { display: flex; align-items: center; gap: 8px; }
+    .cashout-legend-note { font-size: 0.68rem; color: #94a3b8; font-weight: 600; }
+    .pad-btn {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 22px;
+      height: 22px;
+      border-radius: 999px;
+      font-size: 0.72rem;
+      font-weight: 900;
+      vertical-align: middle;
+      flex-shrink: 0;
+    }
+    .pad-a { background: #16a34a; color: #ffffff; }
+    .pad-start { background: #e2e8f0; color: #0b0914; }
+
+    .hidden { display: none !important; }
+  </style>
+</head>
+<body>
+
+  <!-- 1. Top HUD Bar -->
+  <header>
+    <div class="brand-section">
+      <div class="brand-icon" style="font-size: 1.6rem; font-weight: 900; color: #0b0914; font-family: Georgia, 'Times New Roman', serif;">α</div>
+      <div class="brand-titles">
+        <h1>ALPHA MINER</h1>
+        <p id="mapSubtitle">Strike rich in the cavern! Collapsing shelves score +2 DOUBLE!</p>
+      </div>
+    </div>
+
+    <span id="gravityBadge" style="display: none;"></span>
+
+    <!-- Score & Dual-Ledger Wallet Pills -->
+    <div class="hud-pills">
+      <!-- Map Score Goal Pill -->
+      <div class="pill pill-score">
+        <span style="font-size: 1rem;">🪙</span>
+        <div>
+          <div id="levelGoalLabel" class="pill-title">Stage 1 Goal: 7+ KII</div>
+          <div class="pill-value">
+            <span id="scoreValue" style="display: inline-block; min-width: 2ch; text-align: right; font-variant-numeric: tabular-nums;">0</span> <span style="font-size: 0.72rem; color: #94a3b8;">/ 7</span>
+          </div>
+        </div>
+        <div id="coinPips" style="display: flex; gap: 3px;"></div>
+      </div>
+
+      <!-- KII Ledger Wallet Pill with Dual-Ledger Tooltip -->
+      <div id="walletPill" class="pill pill-wallet tooltip-wrapper">
+        <span style="font-size: 1rem;">💰</span>
+        <div>
+          <div class="pill-title">KII Ledger Bank</div>
+          <div class="pill-value">
+            <span id="totalKiiValue">0.00</span> <span style="font-size: 0.7rem; color: #10b981;">KII</span>
+            <span id="payModeBadge" style="font-size: 0.65rem; color: #94a3b8; font-weight: 800;">earned</span>
+          </div>
+        </div>
+
+        <!-- Tooltip: Clean, Quarantined & Raw 10^17 Units -->
+        <div class="tooltip-content">
+          <div style="font-weight: 800; color: #fbbf24; margin-bottom: 4px;">KII Cryptocurrency Dual Ledger</div>
+          <div>Clean Balance: <strong id="cleanKiiValue" style="color: #6ee7b7;">0.00</strong> KII</div>
+          <div>Quarantined Balance: <strong id="quarantinedKiiValue" style="color: #f87171;">0.00</strong> KII</div>
+          <div style="margin-top: 4px; font-size: 0.62rem; color: #94a3b8;" id="rawKiiTooltip">0 raw units (10^-17)</div>
+        </div>
+      </div>
+
+      <!-- Cashed-Out Tracker (burned until the KII network/shop is live) -->
+      <button id="btnCashOutStore" type="button" class="btn-cashout" title="Cashed-out KII is burned until the KII network is live">
+        🔥 Cashed Out: <span id="cashedOutValue">0</span> KII
+      </button>
+
+      <!-- Utility Actions -->
+      <button id="btnAimGuide" type="button" class="btn-preset" style="color: #fde047;">🎯 Aim Guide</button>
+      <button id="btnReset" type="button" class="btn-preset" style="color: #cbd5e1;">🔄 Reset</button>
+      <!-- PLAYTEST ONLY: remove before release -->
+      <button id="btnPlaytestSkip" type="button" class="btn-preset" style="color: #c4b5fd;" title="Playtest: jump to stage 49 / 50 / 75 / 76 / 100, then +10 (controller: Back)">🧪 Skip Stage</button>
+    </div>
+  </header>
+
+  <!-- 2. Murderface Records "Coelestis" Jukebox Bar -->
+  <div class="jukebox-bar">
+    <div class="jukebox-left">
+      <span id="jukeboxNowIcon" class="jukebox-now">♪</span>
+      <span id="jukeboxTrackNo" class="jukebox-trackno">01</span>
+      <span id="jukeboxTrackTitle" class="jukebox-track">Tess' Dream</span>
+      <span id="jukeboxTrackMeta" class="jukebox-meta">Murderface Records · Coelestis · 2025</span>
+      <span id="jukeboxTime" class="jukebox-time">0:00 / 4:52</span>
+    </div>
+    <div class="jukebox-controls">
+      <label class="vol-control" title="Music volume">
+        <span>Music</span>
+        <input id="sliderMusicVolume" type="range" min="0" max="100" value="70" />
+        <span id="musicVolumeReadout" class="vol-readout">70</span>
+      </label>
+      <label class="vol-control" title="Sound effects volume">
+        <span>SFX</span>
+        <input id="sliderSfxVolume" type="range" min="0" max="100" value="100" />
+        <span id="sfxVolumeReadout" class="vol-readout">100</span>
+      </label>
+    </div>
+  </div>
+
+  <!-- 3. Main Game Viewport -->
+  <main>
+    <div id="canvasContainer">
+      <canvas id="gameCanvas" width="1280" height="645"></canvas>
+
+      <!-- Victory / Game Over Modal Dialog -->
+      <div id="victoryModal" class="modal-backdrop hidden">
+        <div class="modal-card">
+          <div style="font-size: 2.5rem; margin-bottom: 6px;">🏆</div>
+          <span id="victoryBadge" class="modal-badge">Map Cleared!</span>
+          <h2 id="victoryTitle" class="modal-title">ORE VEIN FULLY MINED!</h2>
+          <p id="victorySummaryText" class="modal-summary">You struck rich! Mined KII has been credited to your ledger.</p>
+
+          <div class="stats-grid">
+            <div>
+              <div class="stat-label">Throws</div>
+              <div id="statThrows" class="stat-val" style="color: #fde047;">0</div>
+            </div>
+            <div>
+              <div class="stat-label">Direct (+1)</div>
+              <div id="statDirectHits" class="stat-val" style="color: #34d399;">0</div>
+            </div>
+            <div>
+              <div class="stat-label">Crush (+2)</div>
+              <div id="statCrushHits" class="stat-val" style="color: #38bdf8;">0</div>
+            </div>
+          </div>
+
+          <div class="modal-actions">
+            <button id="btnPlayAgain" type="button" class="btn-modal" style="background: #252038; color: #cbd5e1; border: 1px solid #3d355b;">
+              ⛏️ PLAY AGAIN
+            </button>
+            <button id="btnNextMap" type="button" class="btn-modal" style="background: linear-gradient(135deg, #f59e0b, #ea580c); color: #020617; border: 1px solid #fde047;">
+              🔀 NEW RUN ▶
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Cash-Out Offer Modal (every 50th stage) -->
+      <div id="cashOutModal" class="modal-backdrop hidden">
+        <div class="modal-card" style="border-color: #34d399;">
+          <div style="font-size: 2.5rem; margin-bottom: 6px;">💰</div>
+          <span id="cashOutBadge" class="modal-badge" style="background: rgba(52, 211, 153, 0.15); border-color: rgba(52, 211, 153, 0.4); color: #6ee7b7;">Stage 50</span>
+          <h2 class="modal-title">CASH OUT NOW?</h2>
+          <p id="cashOutText" class="modal-summary">You will be given 14 free lobs.</p>
+          <div class="cashout-legend">
+            <div class="cashout-legend-title">🎮 Controller</div>
+            <div class="cashout-legend-row"><span class="pad-btn pad-a">A</span> Keep my KII</div>
+            <div class="cashout-legend-row"><span class="pad-btn pad-start">☰</span> START = Cash out</div>
+            <div class="cashout-legend-note">Or click / tap a button below.</div>
+          </div>
+          <div class="modal-actions">
+            <button id="btnCashOutDecline" type="button" class="btn-modal" style="background: #252038; color: #cbd5e1; border: 1px solid #3d355b;">
+              <span class="pad-btn pad-a">A</span> KEEP MY KII
+            </button>
+            <button id="btnCashOutAccept" type="button" class="btn-modal" style="background: linear-gradient(135deg, #34d399, #059669); color: #020617; border: 1px solid #6ee7b7;">
+              <span class="pad-btn pad-start">☰</span> CASH OUT
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </main>
+
+  <!-- 4. Bottom Control Deck -->
+  <footer>
+    <div class="deck-container">
+      
+      <!-- Deck A: Tosser Controls (Shown in Tosser Mode) -->
+      <div id="tosserControlsDeck" style="display: flex; width: 100%; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap;">
+        <div class="arena-grid">
+          <!-- Footwork Stance -->
+          <div class="ctrl-col" style="border-right: 1px solid #231f38; padding-right: 8px;">
+            <div class="ctrl-header">
+              <span>🥾 Dwarf Stance</span>
+              <span id="dwarfPosReadout" style="color: #34d399;">Center</span>
+            </div>
+            <div class="ctrl-row">
+              <button id="btnMoveLeft" type="button" class="btn-preset" style="flex: 1;">◀ Step Left</button>
+              <button id="btnMoveRight" type="button" class="btn-preset" style="flex: 1;">Step Right ▶</button>
+            </div>
+          </div>
+
+          <!-- Lob Angle Slider -->
+          <div class="ctrl-col">
+            <div class="ctrl-header">
+              <span>📐 Lob Angle</span>
+              <span id="angleReadout" style="color: #fbbf24;">52°</span>
+            </div>
+            <div class="ctrl-row">
+              <button id="btnAngleDown" type="button" class="btn-tiny">-</button>
+              <input id="sliderAngle" type="range" min="15" max="80" value="52" />
+              <button id="btnAngleUp" type="button" class="btn-tiny">+</button>
+            </div>
+          </div>
+
+          <!-- Lob Power Slider -->
+          <div class="ctrl-col">
+            <div class="ctrl-header">
+              <span>💪 Lob Power</span>
+              <span id="powerReadout" style="color: #fbbf24;">74%</span>
+            </div>
+            <div class="ctrl-row">
+              <button id="btnPowerDown" type="button" class="btn-tiny">-</button>
+              <input id="sliderPower" type="range" min="25" max="100" value="74" />
+              <button id="btnPowerUp" type="button" class="btn-tiny">+</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Presets & Primary Lob Button -->
+        <div class="lob-actions">
+          <div style="display: flex; flex-direction: column; gap: 4px;">
+            <button id="btnPresetHigh" type="button" class="btn-preset" title="High Overhang Combo">🪨 High Shelf</button>
+            <button id="btnPresetDirect" type="button" class="btn-preset" title="Direct Ore Arch">💎 Ore Arch</button>
+          </div>
+          <button id="btnLobPickaxe" type="button" class="btn-lob">
+            <span style="font-size: 1.1rem;">⛏️</span>
+            <span>LOB PICKAXE!</span>
+          </button>
+        </div>
+      </div>
+
+      <!-- Deck B: Platformer Controls (Shown in Side-Scroller Mode) -->
+      <div id="platformerControlsDeck" class="hidden plat-controls">
+        <button id="btnPlatLeft" type="button" class="btn-plat-touch">◀ RUN LEFT</button>
+        <button id="btnPlatJump" type="button" class="btn-plat-touch btn-plat-jump">▲ JUMP</button>
+        <button id="btnPlatRight" type="button" class="btn-plat-touch">RUN RIGHT ▶</button>
+        <button id="btnPlatLob" type="button" class="btn-plat-touch" style="background: linear-gradient(135deg, #f59e0b, #d97706); color: #020617; border-color: #fde047;">
+          ⛏️ LOB PICKAXE
+        </button>
+      </div>
+
+    </div>
+  </footer>
+
+  <!-- Scripts -->
+  <script src="./vendor/excalibur.min.js"></script>
+  <script src="./dist/bundle.js"></script>
+</body>
+</html>

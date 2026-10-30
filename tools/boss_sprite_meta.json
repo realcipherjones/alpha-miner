@@ -1,0 +1,26 @@
+{
+  "dog": {
+    "frame": 640,
+    "anchorY": 628,
+    "counts": {
+      "idle": 4,
+      "throw": 4,
+      "deflect": 4,
+      "jump": 3,
+      "hurt": 2,
+      "defeat": 2
+    }
+  },
+  "son": {
+    "frame": 1152,
+    "anchorY": 1140,
+    "counts": {
+      "idle": 4,
+      "throw": 3,
+      "deflect": 4,
+      "jump": 3,
+      "hurt": 3,
+      "defeat": 2
+    }
+  }
+}
