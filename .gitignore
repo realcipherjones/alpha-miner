@@ -14,3 +14,8 @@ assets/reference/*.heic
 node_modules/
 __pycache__/
 *.pyc
+
+# Payout service data and secrets never go in git
+server/*.db
+server/status.json
+server/seed

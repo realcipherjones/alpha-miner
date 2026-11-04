@@ -5,7 +5,6 @@
  * Wires together SoundEngine, KiiLedgerService, GraphicsFactory, LevelData,
  * and ExcaliburGameController with the responsive HTML HUD controls:
  * - Manual Faucet (Arena) mode only; SIDE_SCROLLER is kept internally (e.g. boss fights) but not player-selectable
- * - 10 Map Selector Pills with Space astronaut badges and Half-Gravity indicators
  * - KII Ledger Dual-Ledger HUD (Clean, Quarantined, Raw 10^17 units, Mainnet Cash-Out Store)
  * - Murderface Records "Coelestis" Jukebox Bar (Cipher Jones OST)
  * - Bottom Control Deck (Sliders, presets, footwork, and mobile touch platformer buttons)
@@ -19,6 +18,7 @@ import { ExcaliburGameController, GameModeType } from './scenes/ExcaliburGameCon
 import { getAllMaps, getMapById, isSpaceMap, MapDefinition } from './scenes/LevelData.ts';
 import { GamepadInput } from './input/GamepadInput.ts';
 import { BOSS_OVERKILL_SON } from './scenes/BossFight.ts';
+import { PayoutClient, PayoutError } from './net/PayoutClient.ts';
 
 // ---------------------------------------------------------------------------
 // Bootstrap Function
@@ -99,8 +99,6 @@ function initApp(): void {
   const btnPresetDirect = document.getElementById('btnPresetDirect');
   const btnLobPickaxe = document.getElementById('btnLobPickaxe');
   const btnAimGuide = document.getElementById('btnAimGuide');
-  const btnReset = document.getElementById('btnReset');
-  const btnPlaytestSkip = document.getElementById('btnPlaytestSkip');
 
   // Platformer Mobile/Touch Buttons
   const btnPlatLeft = document.getElementById('btnPlatLeft');
@@ -116,13 +114,22 @@ function initApp(): void {
   const statThrows = document.getElementById('statThrows');
   const statDirectHits = document.getElementById('statDirectHits');
   const statCrushHits = document.getElementById('statCrushHits');
-  const btnPlayAgain = document.getElementById('btnPlayAgain');
   const cashOutModal = document.getElementById('cashOutModal');
   const cashOutBadge = document.getElementById('cashOutBadge');
   const cashOutText = document.getElementById('cashOutText');
   const btnCashOutAccept = document.getElementById('btnCashOutAccept');
   const btnCashOutDecline = document.getElementById('btnCashOutDecline');
   const btnNextMap = document.getElementById('btnNextMap');
+
+  // Payout account
+  const runStatus = document.getElementById('runStatus');
+  const registerModal = document.getElementById('registerModal');
+  const inputIgn = document.getElementById('inputIgn') as HTMLInputElement | null;
+  const inputWallet = document.getElementById('inputWallet') as HTMLInputElement | null;
+  const registerError = document.getElementById('registerError');
+  const btnRegister = document.getElementById('btnRegister') as HTMLButtonElement | null;
+  const btnRegisterSkip = document.getElementById('btnRegisterSkip');
+  const apiBaseMeta = document.getElementById('apiBaseMeta') as HTMLMetaElement | null;
 
   // -------------------------------------------------------------------------
   // 3. UI Synchronization Functions
@@ -313,9 +320,11 @@ function initApp(): void {
     onCashOutOffer: (stage, freeLobs, balanceKii) => {
       if (cashOutBadge) cashOutBadge.textContent = `Stage ${stage}`;
       if (cashOutText) {
-        cashOutText.textContent =
-          `You will be given ${freeLobs} free lobs. Your ${balanceKii} KII will be cashed out ` +
-          `(burned for now — real KII payouts arrive when the network goes live).`;
+        cashOutText.textContent = verifiedRunId
+          ? `You will be given ${freeLobs} free lobs. Your ${balanceKii} KII will be checked, then paid to your wallet ` +
+            `${payout.account?.wallet.slice(0, 12)}…, up to 1000 KII a day. Any more waits in the queue.`
+          : `You will be given ${freeLobs} free lobs. Your ${balanceKii} KII will be burned, because this run ` +
+            `isn't verified and can't earn payouts.`;
       }
       if (cashOutModal) cashOutModal.classList.remove('hidden');
     },
@@ -329,6 +338,7 @@ function initApp(): void {
         if (statCrushHits) statCrushHits.textContent = String(stats.crushHits);
         victoryModal.classList.remove('hidden');
       }
+      void submitVerifiedRun();
     },
     onModeChange: (newMode) => {
       updateModeButtons(newMode);
@@ -448,7 +458,7 @@ function initApp(): void {
     });
   }
 
-  // Aim Guide & Reset
+  // Aim Guide
   if (btnAimGuide) {
     btnAimGuide.addEventListener('click', () => {
       controller.showAimGuide = !controller.showAimGuide;
@@ -457,30 +467,11 @@ function initApp(): void {
         : 'px-2.5 py-1.5 rounded-xl bg-slate-800 text-slate-400 border border-slate-700 text-xs font-semibold';
     });
   }
-  // PLAYTEST ONLY: jump ahead to late-game milestone stages
-  if (btnPlaytestSkip) {
-    btnPlaytestSkip.addEventListener('click', () => {
-      soundEngine.unlockAudio();
-      controller.skipToNextMilestone();
-    });
-  }
 
-  if (btnReset) {
-    btnReset.addEventListener('click', () => {
-      controller.resetStage();
-    });
-  }
-
-  // Cash Out Store (Roadmap Hook)
+  // Cash-out history
   if (btnCashOutStore) {
     btnCashOutStore.addEventListener('click', () => {
-      const snap = kiiLedger.getSnapshot();
-      alert(
-        `🔥 Cashed out so far: ${KiiLedgerService.formatKiiBalance(snap.totalCashedOutRaw, 2)} KII ` +
-          `across ${snap.cashOutCount} cash-out${snap.cashOutCount === 1 ? '' : 's'}.\n\n` +
-          'Cash-outs are offered every 50 stages. Until the KII network is live there is no shop, ' +
-          'so cashed-out KII is burned. Every cash-out is logged in your ledger.'
-      );
+      void showCashOutStatus();
     });
   }
 
@@ -490,6 +481,8 @@ function initApp(): void {
       soundEngine.unlockAudio();
       if (cashOutModal) cashOutModal.classList.add('hidden');
       controller.acceptCashOut();
+      if (verifiedRunId) showGamepadToast('🧾 Cash-out sent for verification');
+      void submitVerifiedRun();
     });
   }
   if (btnCashOutDecline) {
@@ -499,18 +492,139 @@ function initApp(): void {
     });
   }
 
-  if (btnPlayAgain) {
-    btnPlayAgain.addEventListener('click', () => {
-      controller.resetStage();
-      if (victoryModal) victoryModal.classList.add('hidden');
-    });
-  }
   if (btnNextMap) {
     btnNextMap.addEventListener('click', () => {
       controller.restartRun();
       if (victoryModal) victoryModal.classList.add('hidden');
+      void startVerifiedRun();
     });
   }
+
+  // -------------------------------------------------------------------------
+  // Verified runs: the server issues the seed, then replays the run to work out what it earned
+  // -------------------------------------------------------------------------
+
+  const payout = new PayoutClient(apiBaseMeta?.content || '');
+  let verifiedRunId: string | null = null;
+
+  const updateRunStatus = (): void => {
+    if (!runStatus) return;
+    if (verifiedRunId) {
+      runStatus.textContent = `🟢 ${payout.account?.ign} · verified run`;
+      runStatus.style.color = '#6ee7b7';
+      runStatus.title = 'Cash-outs from this run can be paid to your wallet.';
+    } else {
+      runStatus.textContent = '⚪ Offline run';
+      runStatus.style.color = '#94a3b8';
+      runStatus.title = "This run isn't verified, so it can't earn payouts.";
+    }
+  };
+
+  const startVerifiedRun = async (): Promise<void> => {
+    verifiedRunId = null;
+    updateRunStatus();
+    if (!payout.account) return;
+    try {
+      const run = await payout.startRun();
+      const debug = run.debugStart;
+      controller.beginRun({
+        seed: run.seed,
+        bossEncounters: run.bossEncounters,
+        ...(debug ? { debug: { stage: debug.stage }, startBalanceRaw: BigInt(debug.startBalanceRaw || '0') } : {})
+      });
+      verifiedRunId = run.runId;
+    } catch (err) {
+      if (err instanceof PayoutError && err.status === 401) {
+        payout.forgetAccount();
+        if (registerError) {
+          registerError.textContent = 'The server no longer has your IGN. Claim one to earn payouts.';
+          registerError.classList.remove('hidden');
+        }
+        registerModal?.classList.remove('hidden');
+      } else {
+        showGamepadToast(`⚠️ Offline: this run can't earn payouts (${(err as Error).message})`);
+      }
+    }
+    updateRunStatus();
+  };
+
+  /** Sends the whole run so far. Each cash-out pays once, so a retry or a later submission is always safe. */
+  const submitVerifiedRun = async (): Promise<void> => {
+    const runId = verifiedRunId;
+    if (!runId) return;
+    const log = controller.getRunLog();
+    for (let attempt = 0; attempt < 4; attempt++) {
+      try {
+        await payout.submitRun(runId, log);
+        return;
+      } catch (err) {
+        if (err instanceof PayoutError && err.status < 500 && err.status !== 429) {
+          showGamepadToast(`⚠️ Run not accepted: ${err.message}`);
+          return;
+        }
+        await new Promise((resolve) => setTimeout(resolve, 3000 * 2 ** attempt));
+      }
+    }
+    showGamepadToast("⚠️ Couldn't reach the server. Your next cash-out or game over will send this run again.");
+  };
+
+  const showCashOutStatus = async (): Promise<void> => {
+    const snap = kiiLedger.getSnapshot();
+    let text =
+      `🔥 Cashed out on this PC: ${KiiLedgerService.formatKiiBalance(snap.totalCashedOutRaw, 2)} KII ` +
+      `across ${snap.cashOutCount} cash-out${snap.cashOutCount === 1 ? '' : 's'}.`;
+    if (payout.account) {
+      try {
+        const me = await payout.me();
+        const sum = (key: 'amountRaw' | 'paidRaw') => me.cashOuts.reduce((total, c) => total + BigInt(c[key]), 0n);
+        const earned = sum('amountRaw');
+        const paid = sum('paidRaw');
+        text =
+          `${me.ign} → ${me.wallet.slice(0, 12)}…\n\n` +
+          `Verified: ${KiiLedgerService.formatKiiBalance(earned, 2)} KII\n` +
+          `Paid: ${KiiLedgerService.formatKiiBalance(paid, 2)} KII\n` +
+          `Queued: ${KiiLedgerService.formatKiiBalance(earned - paid, 2)} KII` +
+          (me.lastRejection ? `\n\nLast rejected run: ${me.lastRejection}` : '') +
+          (me.mode === 'dry_run' ? '\n\nTest mode: no real KII is being sent yet.' : '');
+      } catch {
+        text += "\n\nCouldn't reach the server for your payout status.";
+      }
+    }
+    alert(text);
+  };
+
+  const closeRegister = (): void => {
+    if (registerModal) registerModal.classList.add('hidden');
+  };
+  if (btnRegisterSkip) {
+    btnRegisterSkip.addEventListener('click', () => {
+      payout.rememberSkippedRegistration();
+      closeRegister();
+    });
+  }
+  if (btnRegister) {
+    btnRegister.addEventListener('click', async () => {
+      btnRegister.disabled = true;
+      registerError?.classList.add('hidden');
+      try {
+        await payout.register((inputIgn?.value || '').trim(), (inputWallet?.value || '').trim());
+        closeRegister();
+        await startVerifiedRun();
+      } catch (err) {
+        if (registerError) {
+          registerError.textContent = (err as Error).message;
+          registerError.classList.remove('hidden');
+        }
+      }
+      btnRegister.disabled = false;
+    });
+  }
+
+  /** Gamepad on a pop-up: A keeps KII and Start cashes out; on game over either starts a new run. */
+  const modalPress = (cashOutButton: HTMLElement | null): void => {
+    if (registerModal && !registerModal.classList.contains('hidden')) return;
+    (controller.cashOutOfferOpen ? cashOutButton : btnNextMap)?.click();
+  };
 
   // Gamepad / controller support
   const showGamepadToast = (text: string) => {
@@ -526,15 +640,13 @@ function initApp(): void {
   };
   const gamepadInput = new GamepadInput(controller, {
     isModalOpen: () =>
-      (!!victoryModal && !victoryModal.classList.contains('hidden')) || controller.cashOutOfferOpen,
+      (!!victoryModal && !victoryModal.classList.contains('hidden')) ||
+      (!!registerModal && !registerModal.classList.contains('hidden')) ||
+      controller.cashOutOfferOpen,
     // Cash-out pop-up: A = keep KII (safe default while mashing), Start = cash out
-    onModalPlayAgain: () => (controller.cashOutOfferOpen ? btnCashOutDecline?.click() : btnPlayAgain?.click()),
-    onModalNewRun: () => (controller.cashOutOfferOpen ? btnCashOutAccept?.click() : btnNextMap?.click()),
+    onModalA: () => modalPress(btnCashOutDecline),
+    onModalStart: () => modalPress(btnCashOutAccept),
     onToggleAimGuide: () => btnAimGuide?.click(),
-    onPlaytestSkip: () => {
-      soundEngine.unlockAudio();
-      controller.skipToNextMilestone();
-    },
     onConnectionChange: (connected) => showGamepadToast(connected ? '🎮 Controller connected' : '🎮 Controller disconnected')
   });
 
@@ -608,6 +720,12 @@ function initApp(): void {
 
   // Try to autoplay right away; if the browser blocks it, the first click/keypress starts it.
   soundEngine.startPlaylist().catch(() => {});
+
+  if (payout.enabled) {
+    if (payout.account) void startVerifiedRun();
+    else if (!payout.skippedRegistration && registerModal) registerModal.classList.remove('hidden');
+  }
+  updateRunStatus();
 
   // Expose on window for debugging & automated testing
   (window as any).dwarfKiiApp = {

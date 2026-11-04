@@ -14,6 +14,8 @@ To package: `./build_exe.sh`. The launcher tests expect 63 files (`test_launcher
 - **Bosses:**
   - Bone Crusher, the dog (green, +10), and YesChef, the son (purple, +15), both with real sprites cut from
     the GPT green-screen sheet.
+  - The first 2 boss fights of each run are always Bone Crusher, whichever badge triggered them; YesChef can
+    spawn from the 3rd fight on. This rule is in source (`BOSS_DOG_ONLY_FIGHTS`), but not in the packaged exe yet.
   - That sheet is archived at `assets/reference/boss_sheet_gpt.png`. The strips are in
     `assets/sprites/boss/`.
 - **Deflects:**
@@ -27,6 +29,20 @@ To package: `./build_exe.sh`. The launcher tests expect 63 files (`test_launcher
   - After 150, normal fees return and the game is meant to effectively end.
   - Post-150 difficulty is intended, not a bug.
 
+## Replay and payouts (in progress)
+
+- The simulation runs at a fixed 60 Hz with a seeded RNG, and records player inputs. Seed + inputs reproduce a
+  run exactly (`src/scenes/RunReplay.ts`). Visual effects stay on `Math.random`; anything that affects gameplay must use
+  `this.rng`, anything that reads time must use `simTick`, and gameplay math must use `DetMath.ts` (Chrome and Node
+  differ in the last digit of `Math.sin`). Bump `REPLAY_VERSION` when gameplay changes.
+- Verifier: `node tools/replay_run.mjs` (log JSON on stdin, outcome on stdout). Pay from its `cashOuts`, and reject logs
+  with `debug` set, a `startBalanceRaw` the server didn't expect, or a seed the server didn't issue.
+- Tests: `node tools/test_replay.mjs` (bot play on uneven frames, forged logs) and
+  `node tools/test_replay_chrome.mjs` (record in real Chrome, verify in Node). Both need `node build.mjs` first.
+- Every run starts with an empty bank and no free lobs. Only KII earned in that verified run can be paid.
+- Payout service: `server/` (see `server/README.md`). Running at https://miner.murderfacerecords.com on the game box.
+  Release v0.99b-alpha. Dry-run until the operator runs `server/deploy/go_live.sh`.
+
 ## Tools
 
 - **Re-slice sprites:**
@@ -39,12 +55,12 @@ To package: `./build_exe.sh`. The launcher tests expect 63 files (`test_launcher
 
 ## To do before release
 
-- Remove the playtest skip: the 🧪 Skip Stage button (`btnPlaytestSkip`),
-  `skipToNextMilestone` and the gamepad Back hook.
+- Rebuild the exe: source has dropped the reset (button, R, Start), Play Again and the playtest
+  skip (button, Back), so the packaged exe is out of date. A new run from the game-over screen is the
+  only restart left.
 
 ## Optional polish (not requested yet)
 
 - Floor spikes draw over the boss's feet.
 - The son's hurt animation includes a sitting frame.
 - A higher-resolution son sheet would look sharper.
-- A playtest shortcut to jump straight into each boss fight.

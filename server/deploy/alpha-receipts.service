@@ -1,0 +1,27 @@
+[Unit]
+Description=Alpha Miner receipts (signs payouts it can match to verified cash-outs)
+After=network-online.target alpha-web.service
+
+[Service]
+User=alpha-receipts
+Group=alpha-shared
+WorkingDirectory=/opt/alpha-miner/server
+Environment=APP_DB=/var/lib/alpha-miner/shared/app.db
+Environment=RECEIPT_DB=/var/lib/alpha-miner/receipts/receipts.db
+Environment=RECEIPT_KEY_FILE=/var/lib/alpha-miner/receipts/key
+Environment=RECEIPTS_PUBLIC=/var/lib/alpha-miner/shared/receipts.json
+Environment=RECEIPT_NODE=http://127.0.0.1:7617
+Environment=RECEIPT_ACCOUNT=kii_35ftdboa5fww3z7h6zur441abyep6dtduzaunds3srbc3c4pcj5e19a1p1u3
+Environment=RECEIPT_GENESIS=149A92DB41D95B07DA5413BCADEDA34E7779973067DF27E156F5DF4BEFC949CD
+ExecStart=/usr/bin/python3 /opt/alpha-miner/server/receipts.py run
+Restart=always
+RestartSec=30
+UMask=0027
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/alpha-miner/receipts /var/lib/alpha-miner/shared
+
+[Install]
+WantedBy=multi-user.target

@@ -23,7 +23,7 @@ const bundleCode = fs.readFileSync(path.join(__dirname, '../dist/bundle.js'), 'u
 const STAGE = Number(process.argv[2] || 12);
 const FIGHTS = Number(process.argv[3] || 3);
 const START_KII = Number(process.argv[4] || 40);
-const DT_MS = 16;
+const DT_MS = 1000 / 60;
 const MAX_SECONDS = 240;
 const JUMP_SKILL = Number(process.argv[5] ?? 0.55);
 
@@ -111,7 +111,7 @@ function runFight(kind, encounter, seed) {
   c.stage = STAGE;
   c.restartRun();
   c.stage = STAGE;
-  c.resetStage();
+  c.loadMap(c.currentMapId);
   kiiLedger.resetLedger(false);
   kiiLedger.creditKiiCoins(START_KII);
   // encounter 1 = first time; pre-load history for later encounters

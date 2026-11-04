@@ -1,0 +1,126 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Alpha Miner Leaderboard</title>
+<style>
+  :root { color-scheme: dark; --bg:#0b0914; --card:#151127; --line:#2d2647; --text:#ece8f7; --dim:#9a93b3; --gold:#fbbf24; --green:#34d399; --red:#fb7185; }
+  * { box-sizing: border-box; }
+  body { margin:0; background:var(--bg); color:var(--text); font:15px/1.5 system-ui,-apple-system,"Segoe UI",sans-serif; }
+  main { max-width:880px; margin:0 auto; padding:28px 16px 48px; }
+  h1 { margin:0; font-size:28px; color:var(--gold); }
+  h2 { margin:28px 0 10px; font-size:17px; }
+  .sub { color:var(--dim); margin:4px 0 18px; }
+  .banner { padding:10px 14px; border-radius:10px; margin-bottom:16px; border:1px solid var(--line); background:var(--card); }
+  .banner.warn { border-color:var(--red); color:var(--red); }
+  .stats { display:grid; grid-template-columns:repeat(auto-fit,minmax(170px,1fr)); gap:10px; }
+  .stat { background:var(--card); border:1px solid var(--line); border-radius:10px; padding:12px 14px; }
+  .stat b { display:block; font-size:20px; font-variant-numeric:tabular-nums; }
+  .stat span { color:var(--dim); font-size:13px; }
+  .scroll { overflow-x:auto; background:var(--card); border:1px solid var(--line); border-radius:10px; }
+  table { width:100%; border-collapse:collapse; }
+  th,td { padding:9px 12px; text-align:right; white-space:nowrap; font-variant-numeric:tabular-nums; }
+  th { color:var(--dim); font-size:12px; font-weight:600; border-bottom:1px solid var(--line); }
+  tr+tr td { border-top:1px solid #211b38; }
+  th.name,td.name { text-align:left; }
+  td.rank { color:var(--dim); width:42px; }
+  code { font-size:12px; color:var(--dim); }
+  .empty { color:var(--dim); padding:18px; text-align:center; }
+  footer { color:var(--dim); font-size:13px; margin-top:24px; }
+</style>
+</head>
+<body>
+<main>
+  <h1>⛏️ Alpha Miner</h1>
+  <p class="sub">Every entry comes from a run the server replayed. Cash out at stages 50, 100 and 150 to earn KII.</p>
+  <div id="banner" class="banner" hidden></div>
+  <div class="stats">
+    <div class="stat"><b id="paidToday">–</b><span>KII paid today</span></div>
+    <div class="stat"><b id="ceiling">–</b><span>Today's ceiling (0.25% of wallet)</span></div>
+    <div class="stat"><b id="queued">–</b><span>KII queued for later days</span></div>
+  </div>
+  <h2>Top miners</h2>
+  <div class="scroll"><table>
+    <thead><tr><th class="name">#</th><th class="name">IGN</th><th>Best stage</th><th>Earned</th><th>Paid</th><th>Queued</th></tr></thead>
+    <tbody id="players"></tbody>
+  </table></div>
+  <h2>Recent payouts</h2>
+  <div class="scroll"><table>
+    <thead><tr><th class="name">IGN</th><th>KII</th><th class="name">Block</th></tr></thead>
+    <tbody id="recent"></tbody>
+  </table></div>
+  <p class="sub" id="receipts"></p>
+  <footer>Each player can receive up to 1000 KII a day. Anything over a daily limit stays queued, oldest first, and nobody loses it.</footer>
+</main>
+<script>
+  const KII = 100000000000000000n;
+  const fmt = (raw) => {
+    const value = BigInt(raw || '0');
+    const cents = (value % KII) * 100n / KII;
+    return (value / KII).toLocaleString('en-US') + (cents ? '.' + String(cents).padStart(2, '0') : '');
+  };
+  const cell = (row, text, className) => {
+    const td = document.createElement('td');
+    td.textContent = text;
+    if (className) td.className = className;
+    row.appendChild(td);
+    return td;
+  };
+  const empty = (body, columns, text) => {
+    const row = body.insertRow();
+    const td = cell(row, text, 'empty');
+    td.colSpan = columns;
+  };
+  async function refresh() {
+    const data = await (await fetch('/api/leaderboard')).json();
+    document.getElementById('paidToday').textContent = fmt(data.paidTodayRaw);
+    document.getElementById('ceiling').textContent = data.walletCeilingRaw ? fmt(data.walletCeilingRaw) : '–';
+    document.getElementById('queued').textContent = fmt(data.queuedRaw);
+    const banner = document.getElementById('banner');
+    const notes = [];
+    if (data.mode === 'dry_run') notes.push('Test mode: no real KII is being sent.');
+    if (data.paused) notes.push('Payouts are paused for a check. Queued KII stays queued.');
+    banner.hidden = !notes.length;
+    banner.textContent = notes.join(' ');
+    banner.className = data.paused ? 'banner warn' : 'banner';
+    const players = document.getElementById('players');
+    players.replaceChildren();
+    data.players.forEach((p, i) => {
+      const row = players.insertRow();
+      cell(row, i + 1, 'name rank');
+      cell(row, p.ign, 'name');
+      cell(row, p.bestStage);
+      cell(row, fmt(p.earnedRaw));
+      cell(row, fmt(p.paidRaw));
+      cell(row, fmt(p.queuedRaw));
+    });
+    if (!data.players.length) empty(players, 6, 'No verified runs yet.');
+    const recent = document.getElementById('recent');
+    recent.replaceChildren();
+    data.recent.forEach((r) => {
+      const row = recent.insertRow();
+      cell(row, r.ign, 'name');
+      cell(row, fmt(r.amountRaw));
+      const block = cell(row, '', 'name');
+      const code = document.createElement('code');
+      code.textContent = r.blockHash ? r.blockHash.slice(0, 16) + '…' : '';
+      code.title = r.blockHash || '';
+      block.appendChild(code);
+    });
+    if (!data.recent.length) empty(recent, 3, 'No payouts yet.');
+    const signed = await (await fetch('/api/receipts')).json();
+    document.getElementById('receipts').textContent = signed.publicKey
+      ? `${signed.receiptCount} signed payout receipts. Receipt key: ${signed.publicKey}`
+      : '';
+    if (signed.unmatched.length) {
+      banner.hidden = false;
+      banner.className = 'banner warn';
+      banner.textContent = `${signed.unmatched.length} send(s) from the wallet don't match a verified cash-out. ${banner.textContent}`;
+    }
+  }
+  refresh().catch(() => {});
+  setInterval(() => refresh().catch(() => {}), 30000);
+</script>
+</body>
+</html>

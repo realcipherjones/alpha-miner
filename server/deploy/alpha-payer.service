@@ -1,0 +1,28 @@
+[Unit]
+Description=Alpha Miner payer (the only process that can read the wallet seed)
+After=network-online.target alpha-web.service
+
+[Service]
+User=alpha-payer
+Group=alpha-shared
+WorkingDirectory=/opt/alpha-miner/server
+Environment=APP_DB=/var/lib/alpha-miner/shared/app.db
+Environment=PAYER_DB=/var/lib/alpha-miner/payer/payer.db
+Environment=PAYER_STATUS=/var/lib/alpha-miner/shared/status.json
+Environment=PAYER_NODE=http://127.0.0.1:7617
+# dry_run until the go-live checklist in server/README.md is done
+Environment=PAYER_MODE=dry_run
+Environment=PAYER_ACCOUNT=kii_35ftdboa5fww3z7h6zur441abyep6dtduzaunds3srbc3c4pcj5e19a1p1u3
+Environment=PAYER_SEED_FILE=/var/lib/alpha-miner/payer/seed
+ExecStart=/usr/bin/python3 /opt/alpha-miner/server/payer.py run
+Restart=always
+RestartSec=30
+UMask=0027
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/alpha-miner/payer /var/lib/alpha-miner/shared
+
+[Install]
+WantedBy=multi-user.target

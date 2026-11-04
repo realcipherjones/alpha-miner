@@ -5,7 +5,8 @@
  *
  * Triggers (decided by ExcaliburGameController when a stage's clear countdown ends):
  * - Overkill badge GREEN (+10 past the 7 KII goal)  -> Dog boss
- * - Overkill badge PURPLE (+15 past the 7 KII goal) -> Son boss
+ * - Overkill badge PURPLE (+15 past the 7 KII goal) -> Son boss, once the first 2 boss fights are done
+ *   of the run (those are always the Dog, whichever trigger was met)
  *
  * Rules:
  * - Boss stands in the bottom-right corner, oversized (dog 2x, son 3x the dwarf), and can jump.
@@ -23,6 +24,7 @@
 
 import type { FallingObjectDef } from './LevelData.ts';
 import { BOSS_SPRITE_META } from './BossSpriteMeta.ts';
+import { detCos, detTan } from './DetMath.ts';
 
 export type BossKind = 'dog' | 'son';
 export type BossProjectileKind = FallingObjectDef['kind'];
@@ -30,6 +32,8 @@ export type BossProjectileKind = FallingObjectDef['kind'];
 export const BOSS_HITS_TO_DEFEAT = 10;
 export const BOSS_OVERKILL_DOG = 10; // green overkill badge
 export const BOSS_OVERKILL_SON = 15; // purple overkill badge
+/** The first boss fights of every run are always the dog, even on a purple badge. */
+export const BOSS_DOG_ONLY_FIGHTS = 2;
 /** Boss-fight lobs cost nothing through this stage (3 cash-out chances: 50, 100, 150); fees return after. */
 export const BOSS_FREE_LOBS_MAX_STAGE = 150;
 
@@ -140,8 +144,8 @@ export interface BossProjectile {
   bounces: number;
 }
 
-export function bossForOverkill(overkill: number): BossKind | null {
-  if (overkill >= BOSS_OVERKILL_SON) return 'son';
+export function bossForOverkill(overkill: number, bossFightsThisRun: number): BossKind | null {
+  if (overkill >= BOSS_OVERKILL_SON && bossFightsThisRun >= BOSS_DOG_ONLY_FIGHTS) return 'son';
   if (overkill >= BOSS_OVERKILL_DOG) return 'dog';
   return null;
 }
@@ -177,7 +181,8 @@ export function solveBossLob(
   for (let k = 0; k <= 50; k++) {
     const angleDeg = 20 + ((start - 20 + k) % 51);
     const rad = (angleDeg * Math.PI) / 180;
-    const denom = 2 * Math.cos(rad) ** 2 * (dy + dx * Math.tan(rad));
+    const cos = detCos(rad);
+    const denom = 2 * cos * cos * (dy + dx * detTan(rad));
     if (denom <= 0) continue;
     const speed = Math.sqrt((gravity * dx * dx) / denom);
     const powerPct = ((speed - 440) / 800) * 100;

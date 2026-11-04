@@ -12,9 +12,7 @@
  * - X / B / RT: lob pickaxe
  * - LB / RB: aim presets (High Shelf / Ore Arch)
  * - Y: toggle aim guide
- * - Back/View: PLAYTEST skip to next late-game milestone stage (49, 50, 75, 76, 100, then +10)
- * - Start/Menu: reset stage
- * - Victory/game-over screen: A = play again, Start = new run
+ * - Game-over screen: A or Start = new run
  * - Cash-out pop-up: A = keep KII, Start = cash out
  */
 
@@ -22,10 +20,9 @@ import type { ExcaliburGameController } from '../scenes/ExcaliburGameController.
 
 export interface GamepadHooks {
   isModalOpen: () => boolean;
-  onModalPlayAgain: () => void;
-  onModalNewRun: () => void;
+  onModalA: () => void;
+  onModalStart: () => void;
   onToggleAimGuide: () => void;
-  onPlaytestSkip: () => void;
   onConnectionChange?: (connected: boolean, name: string) => void;
 }
 
@@ -37,7 +34,6 @@ const BTN_Y = 3;
 const BTN_LB = 4;
 const BTN_RB = 5;
 const BTN_RT = 7;
-const BTN_BACK = 8;
 const BTN_START = 9;
 const BTN_DPAD_UP = 12;
 const BTN_DPAD_DOWN = 13;
@@ -148,8 +144,8 @@ export class GamepadInput {
     }
 
     if (this.hooks.isModalOpen()) {
-      if (pressed(BTN_A)) this.hooks.onModalPlayAgain();
-      if (pressed(BTN_START)) this.hooks.onModalNewRun();
+      if (pressed(BTN_A)) this.hooks.onModalA();
+      if (pressed(BTN_START)) this.hooks.onModalStart();
       this.prevButtons = buttons;
       return;
     }
@@ -204,8 +200,6 @@ export class GamepadInput {
 
     // --- Menu-ish buttons ---
     if (pressed(BTN_Y)) this.hooks.onToggleAimGuide();
-    if (pressed(BTN_BACK)) this.hooks.onPlaytestSkip();
-    if (pressed(BTN_START)) c.resetStage();
 
     this.prevButtons = buttons;
   }

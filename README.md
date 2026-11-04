@@ -25,7 +25,6 @@ axe at the ore, earn KII, dodge the birds, and survive two boss fights: **Bone C
 | Jump (boss fights) | W | A |
 | Aim presets | — | LB (high) / RB (ore) |
 | Toggle aim guide | — | Y |
-| Reset the stage | R | Start |
 
 The mouse also aims: drag to set the angle and power.
 
@@ -37,6 +36,9 @@ Clear a map's 7 KII goal and keep scoring. The overkill badge decides what happe
   your axes back at you.
 - **+15 (purple): YesChef.** Arms crossed and grinning, he hair-whips 15% of your axes
   back at you.
+
+The first 2 boss fights of every run are always Bone Crusher, even on a purple badge.
+YesChef can only show up after that.
 
 Land 10 hits to win. A hit you take, including from your own swatted-back axe, knocks out
 1 KII. Boss-fight lobs are free through stage 150.
