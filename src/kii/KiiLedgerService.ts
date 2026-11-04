@@ -508,6 +508,14 @@ export class KiiLedgerService {
    * wallet yet, so the player's entire balance (quarantined + clean) is burned.
    * Returns the raw amount burned.
    */
+  /** New run: the bank starts empty, because only KII earned in a verified run can be paid out. Lifetime stats stay. */
+  public resetRunBalance(): void {
+    this.cleanKiiRaw = 0n;
+    this.quarantinedKiiRaw = 0n;
+    this.saveState();
+    this.notifyListeners();
+  }
+
   public burnAllForCashOut(level: number, mode: GameMode = 'MANUAL_FAUCET'): bigint {
     const burnedRaw = this.getTotalKiiRaw();
     if (burnedRaw <= 0n) return 0n;

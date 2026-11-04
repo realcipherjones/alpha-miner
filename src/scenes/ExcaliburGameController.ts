@@ -54,7 +54,21 @@ import {
   HazardType,
   BIRD_RADIUS
 } from './LevelData.ts';
-import { generateArenaLevel, GeneratedArenaLevel } from './ArenaGenerator.ts';
+import { generateArenaLevel, GeneratedArenaLevel, mulberry32 } from './ArenaGenerator.ts';
+import { detCos, detHypot, detSin } from './DetMath.ts';
+import {
+  hashText,
+  MAX_FRAME_CATCH_UP_SECONDS,
+  REPLAY_VERSION,
+  RunCashOut,
+  RunCheckpoint,
+  RunInput,
+  RunInputCode,
+  RunLog,
+  RunLogHeader,
+  RunStartOptions,
+  SIM_STEP_SECONDS
+} from './RunReplay.ts';
 import {
   BossKind,
   BossState,
@@ -186,6 +200,8 @@ export class ExcaliburGameController {
   public bossProjectiles: BossProjectile[] = [];
   /** Times each boss has been faced; persisted so "first encounter = no birds" survives restarts. */
   public bossEncounters: Record<BossKind, number> = { dog: 0, son: 0 };
+  /** Boss fights started this run; the first BOSS_DOG_ONLY_FIGHTS are always the dog. */
+  public bossFightsThisRun: number = 0;
   /** True while the cash-out pop-up is waiting on the player; the game is frozen. */
   public cashOutOfferOpen: boolean = false;
   public levelTransitioning: boolean = false;
@@ -280,6 +296,21 @@ export class ExcaliburGameController {
   // Animation frame request handle
   private animFrameId: number | null = null;
   private lastTimestamp: number = 0;
+  private stepAccumulator: number = 0;
+
+  // Replay: gameplay randomness, fixed simulation steps and the recorded inputs (see RunReplay.ts)
+  private runSeed: number = 0;
+  private rngSource: () => number = mulberry32(0);
+  private rngCalls: number = 0;
+  private readonly rng = (): number => {
+    this.rngCalls += 1;
+    return this.rngSource();
+  };
+  public simTick: number = 0;
+  private runHeader: RunLogHeader | null = null;
+  private runInputs: RunInput[] = [];
+  private runCheckpoints: RunCheckpoint[] = [];
+  public runCashOuts: RunCashOut[] = [];
 
   constructor(options: {
     canvasId?: string;
@@ -324,10 +355,8 @@ export class ExcaliburGameController {
     loadBlockSprites();
     this.setupPointerListeners();
     this.setupKeyboardListeners();
-    this.mapOrder = this.shuffleMaps();
-    this.currentMapId = this.mapOrder[0];
-    this.generateArenaForStage();
-    this.loadMap(this.currentMapId);
+    this.recordPlayerInputs();
+    this.beginRun();
     this.initExcaliburEngine();
     this.startLoop();
   }
@@ -379,6 +408,7 @@ export class ExcaliburGameController {
 
   private generateArenaForStage(): void {
     this.arenaLevel = generateArenaLevel({
+      seed: Math.floor(this.rng() * 0x7fffffff),
       stage: this.stage,
       avoidArchetype: this.arenaLevel ? this.arenaLevel.archetypeId : undefined
     });
@@ -435,10 +465,10 @@ export class ExcaliburGameController {
     return this.birdsEnabled();
   }
 
-  /** Overkill badge tier reached this stage decides the boss: green (+10) dog, purple (+15) son. */
+  /** Overkill badge tier decides the boss: green (+10) dog, purple (+15) son, but each run's first 2 fights are always the dog. */
   public pendingBossKind(): BossKind | null {
     if (this.boss) return null;
-    return bossForOverkill(this.score - this.targetScore);
+    return bossForOverkill(this.score - this.targetScore, this.bossFightsThisRun);
   }
 
   /** Stage 100+: the first axe hit strips a bird's shield (still redirecting it); the second kills. */
@@ -449,7 +479,7 @@ export class ExcaliburGameController {
   private applyBirdSpeedJitter<T extends BirdDef>(bird: T): T {
     const pct = this.birdSpeedJitterPct();
     if (pct === 0) return bird;
-    const factor = 1 + ((Math.random() * 2 - 1) * pct) / 100;
+    const factor = 1 + ((this.rng() * 2 - 1) * pct) / 100;
     bird.vx = (bird.vx || 0) * factor;
     bird.vy = (bird.vy || 0) * factor;
     return bird;
@@ -473,7 +503,8 @@ export class ExcaliburGameController {
     if (!this.cashOutOfferOpen) return;
     this.cashOutOfferOpen = false;
     const lobs = this.cashOutLobCount();
-    this.kiiLedger.burnAllForCashOut(this.stage, this.mode);
+    const burnedRaw = this.kiiLedger.burnAllForCashOut(this.stage, this.mode);
+    this.runCashOuts.push({ stage: this.stage, tick: this.simTick, amountRaw: burnedRaw.toString() });
     this.freeLobs += lobs;
     this.kiiLedger.recordFreeLobAwarded(this.stage, {
       mode: this.mode,
@@ -501,7 +532,7 @@ export class ExcaliburGameController {
   private shuffleMaps(avoidFirst?: number): number[] {
     const ids = getAllMaps().map((m) => m.mapId);
     for (let i = ids.length - 1; i > 0; i--) {
-      const j = Math.floor(Math.random() * (i + 1));
+      const j = Math.floor(this.rng() * (i + 1));
       [ids[i], ids[j]] = [ids[j], ids[i]];
     }
     // Don't repeat the map just played when a new lap of the shuffle begins
@@ -525,6 +556,7 @@ export class ExcaliburGameController {
     this.stage += 1;
     this.generateArenaForStage();
     this.loadMap(nextMapId);
+    this.runCheckpoints.push([this.stage, this.simTick, this.simDigest()]);
 
     // Every 50th stage: offer to cash out (burn) the KII balance for free lobs
     const balanceKii = this.kiiLedger.getTotalKiiCoins();
@@ -536,28 +568,125 @@ export class ExcaliburGameController {
     }
   }
 
-  /** Fresh run: new shuffle, back to stage 1. */
-  /** PLAYTEST ONLY: stages worth jumping to when testing late-game rules. */
-  private static readonly PLAYTEST_MILESTONES = [49, 50, 75, 76, 100];
-
-  /** PLAYTEST ONLY: jump to the next late-game milestone stage (then +10 past 100). */
-  public skipToNextMilestone(): void {
-    if (this.cashOutOfferOpen) return;
-    const next =
-      ExcaliburGameController.PLAYTEST_MILESTONES.find((s) => s > this.stage) ?? this.stage + 10;
-    this.pickaxes = [];
-    this.levelTransitioning = false;
-    this.stage = next - 1;
-    this.advanceStage(); // goes through the normal path, so stage 50 still offers the cash-out
+  /** Fresh run: new shuffle, back to stage 1, boss order starts over. */
+  public restartRun(): void {
+    this.beginRun();
   }
 
-  public restartRun(): void {
-    this.stage = 1;
+  /**
+   * Starts a run from a known state, so seed + inputs reproduce it exactly on the verifier.
+   * Everything the simulation reads has to be set here or written to the run header.
+   */
+  public beginRun(options: RunStartOptions = {}): void {
+    this.runSeed = options.seed ?? Math.floor(Math.random() * 0x100000000);
+    this.rngSource = mulberry32(this.runSeed);
+    this.rngCalls = 0;
+    this.simTick = 0;
+    this.stepAccumulator = 0;
+    this.stage = options.debug?.stage ?? 1;
+    this.bossFightsThisRun = 0;
     this.cashOutOfferOpen = false;
-    this.freeLobs = Math.min(this.freeLobs, this.freeLobCap());
-    this.mapOrder = this.shuffleMaps(this.currentMapId);
+    this.totalThrows = 0;
+    this.directHits = 0;
+    this.crushHits = 0;
+    this.arenaNodeHitTimer = 0;
+    this.arenaLevel = null;
+    this.dwarfArena.cheerTimer = 0;
+    this.dwarfArena.throwTimer = 0;
+    this.dwarfArena.lastThrowTime = -10;
+    this.dwarfPlatformer.lastThrowTime = -10;
+    this.freeLobs = options.freeLobs ?? 0;
+    if (options.bossEncounters) this.bossEncounters = { ...options.bossEncounters };
+    if (options.aim) this.setAim(options.aim.angle, options.aim.power);
+    this.kiiLedger.resetRunBalance();
+    if (options.startBalanceRaw) this.kiiLedger.creditKiiRaw(options.startBalanceRaw);
+    this.runHeader = {
+      version: REPLAY_VERSION,
+      seed: this.runSeed,
+      startBalanceRaw: this.kiiLedger.getTotalKiiRaw().toString(),
+      freeLobs: this.freeLobs,
+      bossEncounters: { ...this.bossEncounters },
+      aim: { angle: this.aimAngleDeg, power: this.aimPowerPct },
+      ...(options.debug ? { debug: options.debug } : {})
+    };
+    this.runInputs = [];
+    this.runCheckpoints = [];
+    this.runCashOuts = [];
+    this.mapOrder = this.shuffleMaps();
     this.generateArenaForStage();
     this.loadMap(this.mapOrder[0]);
+    if (options.debug?.boss) this.startBossFight(options.debug.boss);
+  }
+
+  /** Logs player actions with the simulation tick they landed on, at the methods every input path calls. */
+  private recordPlayerInputs(): void {
+    const self = this as any;
+    const wrap = (method: string, code: RunInputCode, argsAfter: (args: any[]) => number[]) => {
+      const original = self[method];
+      self[method] = (...args: any[]) => {
+        // Aim is logged after it runs because it records the clamped values. It can't end the run.
+        // Everything else goes in first: a lob can end the run, and the game-over callback sends this log.
+        if (code !== 'a') {
+          this.runInputs.push([this.simTick, code, ...argsAfter(args)]);
+          return original.apply(this, args);
+        }
+        const result = original.apply(this, args);
+        const entry: RunInput = [this.simTick, code, ...argsAfter(args)];
+        const last = this.runInputs[this.runInputs.length - 1];
+        // Aim is absolute, so only the latest value in a tick matters
+        if (last && last[0] === entry[0] && last[1] === 'a') this.runInputs[this.runInputs.length - 1] = entry;
+        else this.runInputs.push(entry);
+        return result;
+      };
+    };
+    wrap('stepDwarf', 's', ([direction]) => [direction]);
+    wrap('arenaJump', 'j', () => []);
+    wrap('setAim', 'a', () => [this.aimAngleDeg, this.aimPowerPct]);
+    wrap('lobPickaxe', 'l', () => []);
+    wrap('acceptCashOut', 'c', () => []);
+    wrap('declineCashOut', 'd', () => []);
+  }
+
+  /** Everything the verifier needs to reproduce this run. */
+  public getRunLog(): RunLog {
+    return {
+      header: this.runHeader as RunLogHeader,
+      ticks: this.simTick,
+      inputs: this.runInputs.map((input) => [...input] as RunInput),
+      checkpoints: this.runCheckpoints.map((point) => [...point] as RunCheckpoint),
+      digest: this.simDigest()
+    };
+  }
+
+  /** Hash of the simulation state. Rendering and visual effects must never change it. */
+  public simDigest(): string {
+    const ledger = this.kiiLedger.getSnapshot();
+    const state = {
+      tick: this.simTick,
+      rngCalls: this.rngCalls,
+      stage: this.stage,
+      map: this.currentMapId,
+      score: this.score,
+      freeLobs: this.freeLobs,
+      gameOver: this.gameOver,
+      transition: this.levelTransitioning,
+      countdown: this.transitionCountdown,
+      offer: this.cashOutOfferOpen,
+      aim: [this.aimAngleDeg, this.aimPowerPct],
+      fights: this.bossFightsThisRun,
+      encounters: this.bossEncounters,
+      dwarf: this.dwarfArena,
+      axes: this.pickaxes.map((p) => [p.x, p.y, p.vx, p.vy, p.bounces, p.life]),
+      blocks: this.arenaBlocks,
+      objects: this.arenaFallingObjects,
+      birds: this.arenaBirds,
+      birdTimer: this.birdSpawnTimer,
+      boss: this.boss ? { ...this.boss, def: this.boss.def.kind } : null,
+      thrown: this.bossProjectiles,
+      balance: [ledger.cleanKiiRaw.toString(), ledger.quarantinedKiiRaw.toString()],
+      cashOuts: this.runCashOuts
+    };
+    return hashText(JSON.stringify(state));
   }
 
   public loadMap(mapId: number): void {
@@ -631,12 +760,6 @@ export class ExcaliburGameController {
     }
   }
 
-  public resetStage(): void {
-    const bossKind = this.boss && !this.boss.defeated ? this.boss.def.kind : null;
-    this.loadMap(this.currentMapId);
-    if (bossKind) this.startBossFight(bossKind, false);
-  }
-
   // =========================================================================
   // Boss Fights (see BossFight.ts for the rules)
   // =========================================================================
@@ -654,14 +777,13 @@ export class ExcaliburGameController {
     } catch {}
   }
 
-  /** Start a boss fight on the current stage. countEncounter=false for a stage reset mid-fight. */
-  public startBossFight(kind: BossKind, countEncounter: boolean = true): void {
+  /** Start a boss fight on the current stage. */
+  public startBossFight(kind: BossKind): void {
     if (this.mode !== 'MANUAL_FAUCET') this.setMode('MANUAL_FAUCET');
     if (this.boss || this.score > 0) this.loadMap(this.currentMapId);
-    if (countEncounter) {
-      this.bossEncounters[kind] += 1;
-      this.saveBossEncounters();
-    }
+    this.bossFightsThisRun += 1;
+    this.bossEncounters[kind] += 1;
+    this.saveBossEncounters();
     const def = BOSS_DEFS[kind];
     const encounter = Math.max(1, this.bossEncounters[kind]);
     const floorY = this.getArenaLevel().floorY;
@@ -680,7 +802,7 @@ export class ExcaliburGameController {
       coinsKnocked: 0,
       deflectHits: 0,
       throwTimer: 1.6,
-      jumpTimer: 2.5 + Math.random() * 2.5,
+      jumpTimer: 2.5 + this.rng() * 2.5,
       hurtTimer: 0,
       throwAnimTimer: 0,
       deflectAnimTimer: 0,
@@ -706,11 +828,11 @@ export class ExcaliburGameController {
 
   private bossThrow(boss: BossState, grav: number): void {
     const def = boss.def;
-    const kind = def.projectiles[Math.floor(Math.random() * def.projectiles.length)];
+    const kind = def.projectiles[Math.floor(this.rng() * def.projectiles.length)];
     const spec = BOSS_PROJECTILE_SPECS[kind];
     const origin = bossThrowOrigin(boss);
     const target = { x: this.dwarfArena.x, y: this.dwarfArena.y - 8 };
-    const aim = solveBossLob(origin, target, grav, def);
+    const aim = solveBossLob(origin, target, grav, def, this.rng);
     const vel = this.getLaunchVelocity(aim.angleDeg, aim.powerPct, false);
     this.bossProjectiles.push({
       kind,
@@ -755,18 +877,18 @@ export class ExcaliburGameController {
       boss.jumpTimer -= dt;
       if (boss.jumpTimer <= 0 && boss.grounded) {
         this.bossJump(boss);
-        boss.jumpTimer = 3 + Math.random() * 3;
+        boss.jumpTimer = 3 + this.rng() * 3;
       }
       for (const p of this.pickaxes) {
         const pa = p as any;
         if (pa.bossDodgeChecked || p.vx <= 0 || boss.x - p.x > 320 || p.x > boss.x) continue;
         pa.bossDodgeChecked = true;
-        if (boss.grounded && Math.random() < def.dodgeChance) this.bossJump(boss);
+        if (boss.grounded && this.rng() < def.dodgeChance) this.bossJump(boss);
       }
       boss.throwTimer -= dt;
       if (boss.throwTimer <= 0) {
         this.bossThrow(boss, grav);
-        boss.throwTimer = def.throwInterval.min + Math.random() * (def.throwInterval.max - def.throwInterval.min);
+        boss.throwTimer = def.throwInterval.min + this.rng() * (def.throwInterval.max - def.throwInterval.min);
       }
     }
 
@@ -779,7 +901,7 @@ export class ExcaliburGameController {
       o.y += o.vy * dt;
       o.roll += o.vx * dt;
 
-      if (Math.hypot(o.x - dwarf.x, o.y - (dwarf.y - 8)) < o.radius + 30) {
+      if (detHypot(o.x - dwarf.x, o.y - (dwarf.y - 8)) < o.radius + 30) {
         const knocked = this.kiiLedger.knockOutCoin(this.stage, { x: dwarf.x, y: dwarf.y, mode: this.mode, boss: def.name });
         if (knocked) {
           boss.coinsKnocked += 1;
@@ -817,7 +939,7 @@ export class ExcaliburGameController {
     const boss = this.boss;
     if (!boss || boss.defeated) return false;
     const dwarf = this.dwarfArena;
-    if (Math.hypot(p.x - dwarf.x, p.y - (dwarf.y - 8)) >= p.radius + 30) return false;
+    if (detHypot(p.x - dwarf.x, p.y - (dwarf.y - 8)) >= p.radius + 30) return false;
     const knocked = this.kiiLedger.knockOutCoin(this.stage, { x: dwarf.x, y: dwarf.y, mode: this.mode, boss: boss.def.name });
     if (knocked) {
       boss.coinsKnocked += 1;
@@ -840,9 +962,9 @@ export class ExcaliburGameController {
     const box = bossHitbox(boss);
     const cx = Math.max(box.x, Math.min(p.x, box.x + box.w));
     const cy = Math.max(box.y, Math.min(p.y, box.y + box.h));
-    if ((p.x - cx) ** 2 + (p.y - cy) ** 2 > p.radius * p.radius) return false;
+    if ((p.x - cx) * (p.x - cx) + (p.y - cy) * (p.y - cy) > p.radius * p.radius) return false;
 
-    if (Math.random() < boss.def.deflectChance) {
+    if (this.rng() < boss.def.deflectChance) {
       // Hair whip / tail whip: reflect off the boss like a bird shield (same physics)
       boss.deflections += 1;
       boss.deflectAnimTimer = BOSS_DEFLECT_ANIM_SEC;
@@ -851,10 +973,10 @@ export class ExcaliburGameController {
       p.awardedFreeLob = true; // a swatted axe never pays the overhead free lob
       const ccx = box.x + box.w / 2;
       const ccy = box.y + box.h / 2;
-      const dist = Math.hypot(p.x - ccx, p.y - ccy) || 1;
+      const dist = detHypot(p.x - ccx, p.y - ccy) || 1;
       const nx = (p.x - ccx) / dist;
       const ny = (p.y - ccy) / dist;
-      const speed = Math.max(480, Math.hypot(p.vx, p.vy) * 0.92);
+      const speed = Math.max(480, detHypot(p.vx, p.vy) * 0.92);
       p.vx = nx * speed;
       p.vy = ny * speed - 95 + boss.vy * 0.28;
       p.x = cx + nx * (p.radius + 3);
@@ -1001,8 +1123,8 @@ export class ExcaliburGameController {
     const speed = 440 + (powerPct / 100) * 800;
     const dir = facingRight ? 1 : -1;
     return {
-      vx: Math.cos(rad) * speed * dir,
-      vy: -Math.sin(rad) * speed
+      vx: detCos(rad) * speed * dir,
+      vy: -detSin(rad) * speed
     };
   }
 
@@ -1012,7 +1134,7 @@ export class ExcaliburGameController {
 
   public lobPickaxe(): void {
     if (this.gameOver || this.levelTransitioning || this.cashOutOfferOpen) return;
-    const nowSec = performance.now() * 0.001;
+    const nowSec = this.simTick * SIM_STEP_SECONDS;
     const dwarf = this.mode === 'MANUAL_FAUCET' ? this.dwarfArena : this.dwarfPlatformer;
 
     if (nowSec - dwarf.lastThrowTime < 0.42) return;
@@ -1382,7 +1504,7 @@ export class ExcaliburGameController {
     // 10. Intermediate Mining Nodes Collision
     for (let i = this.platIntermediateNodes.length - 1; i >= 0; i--) {
       const node = this.platIntermediateNodes[i];
-      const dist = Math.hypot(dwarf.x - node.x, dwarf.y - node.y);
+      const dist = detHypot(dwarf.x - node.x, dwarf.y - node.y);
       if (dist < 42 + (node.radius || 32)) {
         this.awardScoreHit(node.x, node.y, false, node.value || 2);
         this.platIntermediateNodes.splice(i, 1);
@@ -1390,7 +1512,7 @@ export class ExcaliburGameController {
     }
 
     // 11. Grand Mining Node Collision
-    const gDist = Math.hypot(dwarf.x - this.platGrandNode.x, dwarf.y - this.platGrandNode.y);
+    const gDist = detHypot(dwarf.x - this.platGrandNode.x, dwarf.y - this.platGrandNode.y);
     if (gDist < 45 + this.platGrandNode.radius) {
       this.awardScoreHit(this.platGrandNode.x, this.platGrandNode.y, false, this.platGrandNode.value || 5);
       this.platGrandNode.x = 99999; // Cleared
@@ -1436,7 +1558,7 @@ export class ExcaliburGameController {
       this.birdSpawnTimer -= dt;
       if (this.birdSpawnTimer <= 0) {
         this.spawnTosserPatrolBird();
-        this.birdSpawnTimer = (2.2 + Math.random() * 1.8) / this.birdSpawnRateMultiplier();
+        this.birdSpawnTimer = (2.2 + this.rng() * 1.8) / this.birdSpawnRateMultiplier();
       }
     }
 
@@ -1461,7 +1583,7 @@ export class ExcaliburGameController {
         bAny.baseY = bird.y;
         bAny.homeX = bird.x;
       }
-      const wave = Math.sin(bAny.age * (bird.waveFreq || 2.5)) * (bird.waveAmp || 0);
+      const wave = detSin(bAny.age * (bird.waveFreq || 2.5)) * (bird.waveAmp || 0);
       const ceilingY = (isTosser ? 0 : this.cameraY) + 36;
       if (bird.plane === 'vertical') {
         bird.y += (bird.vy || 0) * dt;
@@ -1551,7 +1673,7 @@ export class ExcaliburGameController {
       let axeDestroyed = false;
       for (let b = birds.length - 1; b >= 0; b--) {
         const bird = birds[b];
-        const distBird = Math.hypot(p.x - bird.x, p.y - bird.y);
+        const distBird = detHypot(p.x - bird.x, p.y - bird.y);
         if (distBird < p.radius + bird.radius) {
           if (bird.shielded) {
             if ((p.birdBounceCooldown || 0) <= 0) {
@@ -1566,7 +1688,7 @@ export class ExcaliburGameController {
               const ny = (p.y - bird.y) / (distBird || 1);
               const incomingVx = p.vx;
               const incomingVy = p.vy;
-              const speed = Math.max(480, Math.hypot(p.vx, p.vy) * 0.92);
+              const speed = Math.max(480, detHypot(p.vx, p.vy) * 0.92);
               p.vx = nx * speed + (bird.vx || 0) * 0.28;
               p.vy = ny * speed - 95 + (bird.vy || 0) * 0.28;
               p.x = bird.x + nx * (p.radius + bird.radius + 3);
@@ -1638,7 +1760,7 @@ export class ExcaliburGameController {
       // Falling Objects Collision
       for (let k = 0; k < fallingObjs.length; k++) {
         const obj = fallingObjs[k];
-        const distObj = Math.hypot(p.x - obj.x, p.y - obj.y);
+        const distObj = detHypot(p.x - obj.x, p.y - obj.y);
         if (distObj < p.radius + obj.radius) {
           obj.vx += p.vx * 0.32;
           obj.vy += Math.min(-80, p.vy * 0.28);
@@ -1654,7 +1776,7 @@ export class ExcaliburGameController {
       // Mining Node Collision (Tosser Mode; no node during boss fights)
       if (isTosser && !this.boss) {
         const node = this.getArenaLevel().miningNode;
-        const distNode = Math.hypot(p.x - node.x, p.y - node.y);
+        const distNode = detHypot(p.x - node.x, p.y - node.y);
         if (distNode < p.radius + node.radius - 4 && p.hitNodeCooldown <= 0) {
           const isIndirect = p.bounces > 0;
           this.awardScoreHit(p.x, p.y, isIndirect);
@@ -1675,7 +1797,7 @@ export class ExcaliburGameController {
         this.spawnParticleBurst(p.x, floorY, '#64748b', 6, 90);
       }
 
-      const settled = p.hitShieldedBird && p.y + p.radius >= floorY - 2 && Math.hypot(p.vx, p.vy) < 24;
+      const settled = p.hitShieldedBird && p.y + p.radius >= floorY - 2 && detHypot(p.vx, p.vy) < 24;
       const worldW = isTosser ? this.viewportWidth : getPlatformerLevel(this.currentMapId).worldWidth;
       if (
         (!p.hitShieldedBird && (p.bounces > p.maxBounces || p.life <= 0)) ||
@@ -1729,12 +1851,12 @@ export class ExcaliburGameController {
       }
       // Resting objects keep a stale vx, so sprite motion follows actual displacement
       obj.roll = (obj.roll || 0) + (obj.x - startX);
-      obj.moving = Math.hypot(obj.x - startX, obj.y - startY) > 20 * dt;
+      obj.moving = detHypot(obj.x - startX, obj.y - startY) > 20 * dt;
 
       // Check rolling/crushing into Mining Node for +2 KII DOUBLE!
       if (isTosser) {
         const node = this.getArenaLevel().miningNode;
-        const dNode = Math.hypot(obj.x - node.x, obj.y - node.y);
+        const dNode = detHypot(obj.x - node.x, obj.y - node.y);
         if (dNode < obj.radius + node.radius && obj.nodeHitsRemaining > 0) {
           obj.nodeHitsRemaining -= 1;
           this.awardScoreHit(obj.x, obj.y, true);
@@ -1825,9 +1947,9 @@ export class ExcaliburGameController {
   ): string {
     if (!this.birdsReversible()) return '🛡️ SHIELD BOUNCE!';
     const bAny = bird as any;
-    const birdSpeed = Math.max(125, Math.hypot(bird.vx || 0, bird.vy || 0));
+    const birdSpeed = Math.max(125, detHypot(bird.vx || 0, bird.vy || 0));
 
-    if (Math.random() < 0.5) {
+    if (this.rng() < 0.5) {
       if (bird.plane === 'vertical') {
         bird.vy = -bird.vy;
         return bird.vy < 0 ? '🛡️ REVERSE UP! ⬆️' : '🛡️ REVERSE DOWN! ⬇️';
@@ -1858,17 +1980,17 @@ export class ExcaliburGameController {
 
   private spawnTosserPatrolBird(): void {
     const yPoss = [120, 190, 260, 310];
-    const chosenY = yPoss[Math.floor(Math.random() * yPoss.length)];
+    const chosenY = yPoss[Math.floor(this.rng() * yPoss.length)];
     this.arenaBirds.push(this.applyBirdSpeedJitter({
-      id: `bird_${Date.now()}`,
+      id: `bird_${this.simTick}_${this.rngCalls}`,
       x: this.viewportWidth + 40,
       y: chosenY,
-      vx: -130 - Math.random() * 35,
+      vx: -130 - this.rng() * 35,
       vy: 0,
       plane: 'horizontal',
       radius: BIRD_RADIUS,
-      waveAmp: 14 + Math.random() * 6,
-      waveFreq: 2.2 + Math.random() * 0.8,
+      waveAmp: 14 + this.rng() * 6,
+      waveFreq: 2.2 + this.rng() * 0.8,
       shielded: this.birdsShielded()
     }));
     this.soundEngine.playBirdSpawnChirp();
@@ -1882,8 +2004,8 @@ export class ExcaliburGameController {
       this.particles.push({
         x,
         y,
-        vx: Math.cos(ang) * sp,
-        vy: Math.sin(ang) * sp - 30,
+        vx: detCos(ang) * sp,
+        vy: detSin(ang) * sp - 30,
         size: 2.5 + Math.random() * 3.5,
         color,
         alpha: 1,
@@ -2443,7 +2565,7 @@ export class ExcaliburGameController {
   /**
    * Keyboard: WASD moves (A/D step or run, W jumps), arrows aim
    * (Up/Down = angle, Left/Right = power), Space jumps (platformer) or lobs (arena),
-   * F/Enter lobs, R resets.
+   * F/Enter lobs.
    */
   private setupKeyboardListeners(): void {
     let heldLeft = false;
@@ -2452,6 +2574,9 @@ export class ExcaliburGameController {
 
     window.addEventListener('keydown', (e) => {
       this.soundEngine.unlockAudio();
+      // Typing an IGN or wallet address must not move the dwarf or eat keystrokes
+      const typing = e.target as HTMLInputElement | null;
+      if (typing && typing.tagName === 'INPUT' && typing.type === 'text') return;
       const key = e.key.toLowerCase();
 
       if (key === 'a' || key === 'd') {
@@ -2483,8 +2608,6 @@ export class ExcaliburGameController {
       } else if (key === 'f' || key === 'enter') {
         e.preventDefault();
         this.lobPickaxe();
-      } else if (key === 'r') {
-        this.resetStage();
       }
     });
 
@@ -2516,20 +2639,32 @@ export class ExcaliburGameController {
   private startLoop(): void {
     this.lastTimestamp = performance.now();
     const frame = (timestamp: number) => {
-      const dt = Math.min(0.06, (timestamp - this.lastTimestamp) * 0.001);
+      // A long stall (hidden tab, slow machine) pauses the game rather than fast-forwarding it
+      this.stepAccumulator += Math.min(MAX_FRAME_CATCH_UP_SECONDS, Math.max(0, (timestamp - this.lastTimestamp) * 0.001));
       this.lastTimestamp = timestamp;
 
-      if (!this.cashOutOfferOpen) {
-        if (this.mode === 'SIDE_SCROLLER') {
-          this.updatePlatformerPhysics(dt);
+      while (this.stepAccumulator >= SIM_STEP_SECONDS - 1e-9) {
+        this.stepAccumulator -= SIM_STEP_SECONDS;
+        if (this.cashOutOfferOpen) {
+          this.stepAccumulator = 0;
+          break;
         }
-        this.updateGeneralPhysics(dt);
+        this.simStep();
       }
       this.render();
 
       this.animFrameId = requestAnimationFrame(frame);
     };
     this.animFrameId = requestAnimationFrame(frame);
+  }
+
+  /** One fixed simulation step: the same in the live game and on the replay verifier. */
+  public simStep(): void {
+    this.simTick += 1;
+    if (this.mode === 'SIDE_SCROLLER') {
+      this.updatePlatformerPhysics(SIM_STEP_SECONDS);
+    }
+    this.updateGeneralPhysics(SIM_STEP_SECONDS);
   }
 
   public destroy(): void {

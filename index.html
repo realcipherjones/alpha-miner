@@ -3,6 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <meta id="apiBaseMeta" name="alpha-miner-api" content="https://miner.murderfacerecords.com">
   <title>α Alpha Miner - KII Blockchain</title>
   <style>
     /* Reset & Base Typography */
@@ -437,6 +438,11 @@
     }
 
     /* Modals */
+    .text-input {
+      display: block; width: 100%; box-sizing: border-box; margin: 8px 0; padding: 10px 12px; border-radius: 10px;
+      background: #0f0c1d; border: 1px solid #3d355b; color: #ece8f7; font: 600 13px ui-monospace, Consolas, monospace;
+    }
+    .text-input:focus { outline: none; border-color: #fbbf24; }
     .modal-backdrop {
       position: absolute;
       inset: 0;
@@ -607,10 +613,8 @@
       </button>
 
       <!-- Utility Actions -->
+      <span id="runStatus" class="btn-preset" style="cursor: default; color: #94a3b8;">⚪ Offline run</span>
       <button id="btnAimGuide" type="button" class="btn-preset" style="color: #fde047;">🎯 Aim Guide</button>
-      <button id="btnReset" type="button" class="btn-preset" style="color: #cbd5e1;">🔄 Reset</button>
-      <!-- PLAYTEST ONLY: remove before release -->
-      <button id="btnPlaytestSkip" type="button" class="btn-preset" style="color: #c4b5fd;" title="Playtest: jump to stage 49 / 50 / 75 / 76 / 100, then +10 (controller: Back)">🧪 Skip Stage</button>
     </div>
   </header>
 
@@ -666,9 +670,6 @@
           </div>
 
           <div class="modal-actions">
-            <button id="btnPlayAgain" type="button" class="btn-modal" style="background: #252038; color: #cbd5e1; border: 1px solid #3d355b;">
-              ⛏️ PLAY AGAIN
-            </button>
             <button id="btnNextMap" type="button" class="btn-modal" style="background: linear-gradient(135deg, #f59e0b, #ea580c); color: #020617; border: 1px solid #fde047;">
               🔀 NEW RUN ▶
             </button>
@@ -677,6 +678,22 @@
       </div>
 
       <!-- Cash-Out Offer Modal (every 50th stage) -->
+      <div id="registerModal" class="modal-backdrop hidden">
+        <div class="modal-card">
+          <div style="font-size: 2.5rem; margin-bottom: 6px;">⛏️</div>
+          <h2 class="modal-title">CLAIM YOUR IGN</h2>
+          <p class="modal-summary">Cash out at stages 50, 100 and 150 to earn real KII. Pick a name and the wallet your KII goes to.</p>
+          <input id="inputIgn" type="text" class="text-input" maxlength="16" placeholder="IGN (3-16 letters, numbers, _ or -)" autocomplete="off" spellcheck="false">
+          <input id="inputWallet" type="text" class="text-input" maxlength="64" placeholder="Your wallet address (kii_...)" autocomplete="off" spellcheck="false">
+          <p class="modal-summary" style="color: #fda4af;"><strong>Your IGN and wallet are locked together permanently.</strong> Check the address: KII sent to a wrong one can't be recovered. Your login is saved only on this computer. If it's lost, for example in a reinstall, that IGN can't play again and that wallet can't claim a new one. There is no recovery.</p>
+          <p id="registerError" class="modal-summary hidden" style="color: #f87171;"></p>
+          <div class="modal-actions">
+            <button id="btnRegisterSkip" type="button" class="btn-modal" style="background: #252038; color: #cbd5e1; border: 1px solid #3d355b;">PLAY WITHOUT PAYOUTS</button>
+            <button id="btnRegister" type="button" class="btn-modal" style="background: linear-gradient(135deg, #34d399, #059669); color: #020617; border: 1px solid #6ee7b7;">CLAIM IGN</button>
+          </div>
+        </div>
+      </div>
+
       <div id="cashOutModal" class="modal-backdrop hidden">
         <div class="modal-card" style="border-color: #34d399;">
           <div style="font-size: 2.5rem; margin-bottom: 6px;">💰</div>

@@ -1,0 +1,8 @@
+# HTTPS for the Alpha Miner service. Caddy gets and renews the certificate on its own.
+miner.murderfacerecords.com {
+	encode gzip
+	request_body {
+		max_size 32MB
+	}
+	reverse_proxy 127.0.0.1:8787
+}

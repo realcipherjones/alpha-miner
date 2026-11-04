@@ -178,7 +178,7 @@ await soundEngine.nextTrack();
 assert.equal(soundEngine.getCurrentTrackTitle(), 'Valence');
 
 // 6. Gamepad support
-const tick = (n = 1) => { for (let i = 0; i < n; i++) { nowMs += 16; animFrameCallback(nowMs); } };
+const tick = (n = 1) => { for (let i = 0; i < n; i++) { nowMs += 1000 / 60; animFrameCallback(nowMs); } };
 fakePad.connected = true;
 controller.setMode('MANUAL_FAUCET');
 controller.setMap(1);
@@ -204,13 +204,24 @@ fakePad.axes[2] = 0;
 assert.ok(controller.aimPowerPct > 70, `Right stick right should raise power (got ${controller.aimPowerPct})`);
 tick();
 
-const stageBeforeBack = controller.stage;
-setPadButton(8, true); // Back = playtest skip (no longer switches mode)
-tick();
-setPadButton(8, false);
-tick();
-assert.equal(controller.mode, 'MANUAL_FAUCET', 'Back should not switch mode');
-assert.equal(controller.stage, 49, `Back should skip to stage 49 (was ${stageBeforeBack})`);
+// Back and Start no longer skip or reset anything mid-game
+{
+  const stageBefore = controller.stage;
+  const arenaBefore = controller.arenaLevel;
+  controller.score = 3;
+  for (const button of [8, 9]) {
+    setPadButton(button, true);
+    tick();
+    setPadButton(button, false);
+    tick();
+  }
+  assert.equal(controller.mode, 'MANUAL_FAUCET', 'Back/Start should not switch mode');
+  assert.equal(controller.stage, stageBefore, 'Back/Start should not change the stage');
+  assert.equal(controller.arenaLevel, arenaBefore, 'Back/Start should not change the map');
+  assert.equal(controller.score, 3, 'Back/Start should not reset the stage');
+}
+assert.equal(typeof controller.resetStage, 'undefined', 'There is no stage reset');
+assert.equal(typeof controller.skipToNextMilestone, 'undefined', 'There is no stage skip');
 controller.restartRun();
 
 controller.setMode('SIDE_SCROLLER'); // still reachable internally (e.g. boss fights)
@@ -272,22 +283,12 @@ controller.advanceStage();
 assert.equal(controller.cashOutOfferOpen, false, 'Only every 50th stage offers a cash-out');
 controller.callbacks.onCashOutOffer = prevOffer;
 
-// Playtest skip walks the milestone stages and still triggers the stage-50 cash-out offer
-controller.stage = 1;
-controller.skipToNextMilestone();
-assert.equal(controller.stage, 49);
+// Reaching stage 50 offers the cash-out
+controller.stage = 49;
 kiiLedger.creditKiiCoins(3);
-controller.skipToNextMilestone();
+controller.advanceStage();
 assert.equal(controller.stage, 50);
-assert.ok(controller.cashOutOfferOpen, 'Skipping to 50 still offers the cash-out');
-controller.skipToNextMilestone();
-assert.equal(controller.stage, 50, 'Skip is blocked while the cash-out pop-up is open');
-controller.declineCashOut();
-for (const want of [75, 76, 100, 110]) {
-  controller.declineCashOut(); // stage 100 offers another cash-out
-  controller.skipToNextMilestone();
-  assert.equal(controller.stage, want);
-}
+assert.ok(controller.cashOutOfferOpen, 'Reaching 50 offers the cash-out');
 controller.declineCashOut();
 
 // Late-game birds: spawn rate (50-75), speed swing (76-100), breakable shields (100+)
@@ -327,14 +328,16 @@ hitBird(true);
 assert.equal(controller.arenaBirds.length, 0, 'Second hit kills the bird');
 controller.pickaxes = [];
 controller.restartRun();
-assert.equal(controller.freeLobs, 1, 'New run clamps banked free lobs back to the stage-1 cap');
+assert.equal(controller.freeLobs, 0, 'A new run starts with no free lobs');
+assert.equal(kiiLedger.getTotalKiiRaw(), 0n, 'A new run starts with an empty bank');
 
-// Boss fights: green overkill (+10) -> dog, purple (+15) -> son, via the stage-clear countdown
+// Boss fights: green overkill (+10) -> dog, purple (+15) -> son (after 2 dog fights), via the stage-clear countdown
 controller.setMode('MANUAL_FAUCET');
 controller.restartRun();
 controller.stage = 12;
-controller.resetStage();
+controller.loadMap(controller.currentMapId);
 controller.bossEncounters = { dog: 0, son: 0 };
+assert.equal(controller.bossFightsThisRun, 0, 'A new run starts with no boss fights');
 const finishCountdownWithScore = (score) => {
   controller.score = score;
   controller.levelTransitioning = true;
@@ -376,8 +379,28 @@ tick();
 assert.equal(controller.boss, null, 'Boss cleared after the victory countdown');
 assert.equal(controller.stage, bossStage + 1, 'Beating the boss advances the stage');
 
+// The first 2 boss fights of a run are always the dog, even on a purple badge
+assert.equal(controller.bossFightsThisRun, 1, 'Beating the dog counts as 1 boss fight this run');
+for (const [fights, score, kind, why] of [
+  [0, 7 + 15, 'dog', 'Purple overkill on the 1st boss fight is still the dog'],
+  [1, 7 + 15, 'dog', 'Purple overkill on the 2nd boss fight is still the dog'],
+  [2, 7 + 15, 'son', 'Purple overkill on the 3rd boss fight is the son'],
+  [2, 7 + 10, 'dog', 'Green overkill on the 3rd boss fight is still the dog'],
+  [2, 7 + 9, null, 'No trigger, no boss, after the first 2 fights too']
+]) {
+  controller.bossFightsThisRun = fights;
+  controller.score = score;
+  assert.equal(controller.pendingBossKind(), kind, why);
+}
+controller.bossFightsThisRun = 1;
 finishCountdownWithScore(7 + 15);
-assert.equal(controller.boss?.def.kind, 'son', 'Purple overkill (+15) triggers the son');
+assert.equal(controller.boss?.def.kind, 'dog', 'Countdown starts the dog on a purple badge in the 2nd boss fight');
+assert.equal(controller.boss.birds, true);
+controller.boss = null;
+controller.loadMap(controller.currentMapId);
+
+finishCountdownWithScore(7 + 15);
+assert.equal(controller.boss?.def.kind, 'son', 'Purple overkill (+15) triggers the son after 2 dog fights');
 assert.equal(controller.boss.birds, false, 'First son encounter has no birds');
 let deflects = 0;
 const trials = 4000;
@@ -415,8 +438,7 @@ assert.equal(controller.boss.deflectHits, 1);
 assert.equal(controller.boss.coinsKnocked, knockedBefore + 1);
 assert.equal(controller.pickaxes.length, 0, 'Deflected axe is consumed on the dwarf');
 controller.levelTransitioning = false;
-controller.resetStage();
-assert.equal(controller.boss?.def.kind, 'son', 'Resetting mid-fight restarts the same boss');
+controller.startBossFight('son');
 
 // Boss fights bring back the jump: up, apex, and land back on the same ledge
 {
@@ -430,8 +452,8 @@ assert.equal(controller.boss?.def.kind, 'son', 'Resetting mid-fight restarts the
   assert.equal(dw.y, groundY, 'Dwarf lands back on the ledge');
   assert.equal(dw.jumpOffset, 0);
 }
-assert.equal(controller.bossEncounters.son, 1, 'A mid-fight reset does not count as a new encounter');
 controller.loadMap(controller.currentMapId);
+controller.bossEncounters.dog = 1;
 controller.startBossFight('dog');
 assert.equal(controller.boss.encounter, 2);
 assert.equal(controller.boss.birds, true, 'Second dog encounter brings birds');
@@ -440,7 +462,7 @@ assert.equal(controller.birdsActive(), true);
 for (const [st, free] of [[100, true], [150, true], [151, false]]) {
   controller.loadMap(controller.currentMapId);
   controller.stage = st;
-  controller.startBossFight('dog', false);
+  controller.startBossFight('dog');
   controller.boss.throwTimer = 99;
   controller.freeLobs = 2;
   kiiLedger.creditKiiCoins(10);
@@ -461,8 +483,15 @@ for (const [st, free] of [[100, true], [150, true], [151, false]]) {
     assert.equal(kiiLedger.getTotalKiiRaw(), before - 4n * RAW, 'Past 150, boss lobs pay the stage fee (4 KII at 151)');
   }
 }
+assert.ok(controller.bossFightsThisRun >= 2);
+const lifetimeDogFights = controller.bossEncounters.dog;
 controller.restartRun();
 assert.equal(controller.boss, null);
 assert.equal(controller.arenaJump(), false, 'No jumping outside boss fights');
+assert.equal(controller.bossFightsThisRun, 0, 'A new run resets the boss order');
+controller.score = 7 + 15;
+assert.equal(controller.pendingBossKind(), 'dog', 'A new run goes back to the dog first');
+assert.equal(controller.bossEncounters.dog, lifetimeDogFights, 'Saved encounters survive a new run (they decide birds)');
+controller.score = 0;
 
 console.log('✅ PASS: Bundle verified across all 10 maps in both MANUAL_FAUCET & SIDE_SCROLLER modes, Half-Gravity Space physics, KII 128-bit BigInt Dual-Ledger, Coelestis 7-track Jukebox, and gamepad controls!');

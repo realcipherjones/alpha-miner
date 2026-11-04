@@ -128,13 +128,18 @@ for c in utility_classes:
 extra_css = '\n'.join(extra_css_lines)
 
 # Inject extra utility CSS and offline metadata + CSP into index.html
+# The exe may only talk to the payout server named in index.html (nothing at all if it's blank)
+_api_match = re.search(r'<meta id="apiBaseMeta"[^>]*content="([^"]*)"', index_html)
+api_base = _api_match.group(1).strip() if _api_match else ''
+if api_base and not re.fullmatch(r'https?://[A-Za-z0-9.:-]+', api_base):
+    raise SystemExit(f'bad payout server address in index.html: {api_base!r}')
 packaged_html = index_html.replace('  </style>', extra_css + '\n  </style>')
 head_meta = (
     '  <meta name="application-name" content="α Alpha Miner">\n'
     '  <meta name="theme-color" content="#0b0914">\n'
     '  <link rel="icon" type="image/x-icon" href="icon.ico">\n'
     '  <link rel="manifest" href="manifest.webmanifest">\n'
-    '  <meta http-equiv="Content-Security-Policy" content="default-src \'self\' data:; script-src \'self\' \'unsafe-inline\'; style-src \'self\' \'unsafe-inline\'; img-src \'self\' data:; media-src \'self\' data:; manifest-src \'self\'; connect-src \'none\'">\n'
+    '  <meta http-equiv="Content-Security-Policy" content="default-src \'self\' data:; script-src \'self\' \'unsafe-inline\'; style-src \'self\' \'unsafe-inline\'; img-src \'self\' data:; media-src \'self\' data:; manifest-src \'self\'; connect-src ' + (f"{api_base}" if api_base else "\'none\'") + '">\n'
     '</head>'
 )
 packaged_html = packaged_html.replace('</head>', head_meta)

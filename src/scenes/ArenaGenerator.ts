@@ -14,6 +14,7 @@
  * Compatible with Node v24 `--experimental-strip-types` (no enums, no parameter properties).
  */
 
+import { detCos, detHypot, detSin } from './DetMath.ts';
 import type {
   TosserArenaLevel,
   BlockDef,
@@ -61,7 +62,7 @@ export interface ArenaGeneratorOptions {
 }
 
 /** Small fast seeded PRNG so any layout can be reproduced from its seed. */
-function mulberry32(seed: number): () => number {
+export function mulberry32(seed: number): () => number {
   let a = seed >>> 0;
   return () => {
     a = (a + 0x6d2b79f5) >>> 0;
@@ -100,6 +101,7 @@ const OBJ_SPECS: Array<{ kind: FallingObjectDef['kind']; name: string; radius: n
 
 /** Minimum clean direct shots (out of the sweep) for a layout to count as fair. */
 const MIN_DIRECT_SHOTS = 6;
+const SHOT_COLUMN_W = 64;
 const MAX_ATTEMPTS = 40;
 
 export function generateArenaLevel(options: ArenaGeneratorOptions): GeneratedArenaLevel {
@@ -384,7 +386,8 @@ function isLayoutValid(level: GeneratedArenaLevel): boolean {
  * Sweeps throws from all three stances (angles 15-80, power 25-100) with the game's
  * launch/gravity model and counts trajectories that reach the node without touching
  * a block. Blocks are destructible, so this measures "fair from the first throw",
- * not "possible at all".
+ * not "possible at all". Stops counting at MIN_DIRECT_SHOTS, since generation only
+ * compares counts below that.
  */
 function countDirectShots(level: GeneratedArenaLevel): number {
   const node = level.miningNode;
@@ -392,6 +395,14 @@ function countDirectShots(level: GeneratedArenaLevel): number {
   const spawn = level.dwarfSpawn;
   const dt = 1 / 60;
   let hits = 0;
+
+  // Throws only need the blocks in their own column. The 1px margin keeps rounding from dropping a block.
+  const columns: BlockDef[][] = Array.from({ length: Math.ceil((WORLD_W + 80) / SHOT_COLUMN_W) + 1 }, () => []);
+  for (const b of level.blocks) {
+    const first = Math.max(0, Math.floor((b.x - PICK_RADIUS - 1) / SHOT_COLUMN_W));
+    const last = Math.min(columns.length - 1, Math.floor((b.x + b.w + PICK_RADIUS + 1) / SHOT_COLUMN_W));
+    for (let c = first; c <= last; c++) columns[c].push(b);
+  }
 
   for (const sx of DWARF_STANCES_X) {
     const surface = sx < 98 ? spawn.leftStepTop! : sx > 160 ? spawn.rightStepTop! : spawn.centerStepTop!;
@@ -403,19 +414,20 @@ function countDirectShots(level: GeneratedArenaLevel): number {
         const speed = 440 + (power / 100) * 800;
         let x = ox;
         let y = oy;
-        let vx = Math.cos(rad) * speed;
-        let vy = -Math.sin(rad) * speed;
+        let vx = detCos(rad) * speed;
+        let vy = -detSin(rad) * speed;
         for (let step = 0; step < 360; step++) {
           vy += PICK_GRAVITY * dt;
           x += vx * dt;
           y += vy * dt;
           if (y + PICK_RADIUS >= FLOOR_Y || x > WORLD_W + 80) break;
-          if (Math.hypot(x - node.x, y - node.y) < hitDist) {
+          if (detHypot(x - node.x, y - node.y) < hitDist) {
             hits++;
+            if (hits >= MIN_DIRECT_SHOTS) return hits;
             break;
           }
           let blocked = false;
-          for (const b of level.blocks) {
+          for (const b of columns[Math.floor(x / SHOT_COLUMN_W)]) {
             if (circleHitsRect(x, y, PICK_RADIUS, b)) {
               blocked = true;
               break;

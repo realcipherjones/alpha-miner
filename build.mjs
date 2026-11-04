@@ -37,6 +37,7 @@ if (typeof stripTypes !== 'function') {
 // 2. Ordered list of source files to bundle
 const SOURCE_FILES = [
   'src/scenes/LevelData.ts',
+  'src/scenes/DetMath.ts',
   'src/scenes/ArenaGenerator.ts',
   'src/actors/DwarfSpriteMeta.ts',
   'src/actors/FallingObjectSpriteMeta.ts',
@@ -44,7 +45,9 @@ const SOURCE_FILES = [
   'src/actors/GraphicsFactory.ts',
   'src/audio/SoundEngine.ts',
   'src/kii/KiiLedgerService.ts',
+  'src/net/PayoutClient.ts',
   'src/scenes/BossSpriteMeta.ts',
+  'src/scenes/RunReplay.ts',
   'src/scenes/BossFight.ts',
   'src/scenes/ExcaliburGameController.ts',
   'src/input/GamepadInput.ts',

@@ -1,0 +1,31 @@
+[Unit]
+Description=Alpha Miner web service (leaderboard, runs, replay verification)
+After=network-online.target
+
+[Service]
+User=alpha-web
+Group=alpha-shared
+WorkingDirectory=/opt/alpha-miner/server
+Environment=APP_DB=/var/lib/alpha-miner/shared/app.db
+Environment=PAYER_STATUS=/var/lib/alpha-miner/shared/status.json
+Environment=RECEIPTS_PUBLIC=/var/lib/alpha-miner/shared/receipts.json
+Environment=APP_HOST=127.0.0.1
+Environment=APP_PORT=8787
+Environment=APP_TRUST_PROXY=yes
+# Players can't sign up with the payout wallet
+Environment=APP_RESERVED_WALLETS=kii_35ftdboa5fww3z7h6zur441abyep6dtduzaunds3srbc3c4pcj5e19a1p1u3
+# systemd strips unescaped quotes, which would break this JSON
+Environment="REPLAY_CMD=[\"/opt/alpha-miner/node/bin/node\",\"/opt/alpha-miner/tools/replay_run.mjs\"]"
+ExecStart=/usr/bin/python3 /opt/alpha-miner/server/app.py
+Restart=always
+RestartSec=5
+UMask=0027
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/alpha-miner/shared
+MemoryMax=3G
+
+[Install]
+WantedBy=multi-user.target
