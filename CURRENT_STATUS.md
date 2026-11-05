@@ -1,21 +1,20 @@
-# Alpha Miner: where we left off (2026-10-29)
+# Alpha Miner: where we left off (2026-11-05)
 
 ## State of the builds
 
-`Alpha Miner.exe` is packaged and current as of 2026-10-29 (SHA256 `02f3e946…`). It includes:
-- the 5 s stage-clear countdown (the countdown after beating a boss is still 3 s; should it be 5 s too?)
-- the son boss triggering at +15 overkill, with the badge turning purple at +15
-- the boss names **Bone Crusher** (dog) and **YesChef** (son), set in `src/scenes/BossFight.ts`
+`Alpha Miner.exe` is v1.1 alpha (SHA256 `6b0864e692b0c00d246776815323130f9fdb2f840d378f6725b43e80ab865c23`): live and in playtesting, not gold. It's the v0.99b-alpha game
+with only the music changed. The countdown after beating a boss is still 3 s, against 5 s after a stage; should it be
+5 s too?
 
-To package: `./build_exe.sh`. The launcher tests expect 63 files (`test_launcher.c`).
+To package: `./build_exe.sh`. The launcher tests expect 65 files (`test_launcher.c`).
 
-## What's in the game now (already in the exe)
+## What's in the game now
 
 - **Bosses:**
   - Bone Crusher, the dog (green, +10), and YesChef, the son (purple, +15), both with real sprites cut from
     the GPT green-screen sheet.
   - The first 2 boss fights of each run are always Bone Crusher, whichever badge triggered them; YesChef can
-    spawn from the 3rd fight on. This rule is in source (`BOSS_DOG_ONLY_FIGHTS`), but not in the packaged exe yet.
+    spawn from the 3rd fight on. This rule is `BOSS_DOG_ONLY_FIGHTS`.
   - That sheet is archived at `assets/reference/boss_sheet_gpt.png`. The strips are in
     `assets/sprites/boss/`.
 - **Deflects:**
@@ -23,6 +22,7 @@ To package: `./build_exe.sh`. The launcher tests expect 63 files (`test_launcher
   - A whipped-back axe flies with bird-shield physics and costs 1 KII if it hits the dwarf.
 - **Jump:** the dwarf can jump in boss fights (A on the gamepad, W on the keyboard). The
   platformer jump code and art are deliberately kept.
+- **Restart:** a new run from the game-over screen is the only restart.
 - **Free lobs:**
   - Boss-fight lobs are free through stage 150. That gives three cash-out chances
     (50/100/150) where the player nets positive KII.
@@ -41,7 +41,9 @@ To package: `./build_exe.sh`. The launcher tests expect 63 files (`test_launcher
   `node tools/test_replay_chrome.mjs` (record in real Chrome, verify in Node). Both need `node build.mjs` first.
 - Every run starts with an empty bank and no free lobs. Only KII earned in that verified run can be paid.
 - Payout service: `server/` (see `server/README.md`). Running at https://miner.murderfacerecords.com on the game box.
-  Release v0.99b-alpha. Dry-run until the operator runs `server/deploy/go_live.sh`.
+  It's in `live` mode and pays real KII (`/api/leaderboard` reported this on 2026-11-05).
+  v1.1 alpha didn't redeploy the server, so it still runs the v0.99b-alpha bundle. Gameplay didn't change, and
+  replay logs matched and verified both ways between the two bundles. Sync the bundle on the next server deploy.
 
 ## Tools
 
@@ -53,11 +55,15 @@ To package: `./build_exe.sh`. The launcher tests expect 63 files (`test_launcher
 - **Bundle:** `node build.mjs` (node lives at
   `~/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/bin/node`)
 
-## To do before release
+## Music
 
-- Rebuild the exe: source has dropped the reset (button, R, Start), Play Again and the playtest
-  skip (button, Back), so the packaged exe is out of date. A new run from the game-over screen is the
-  only restart left.
+- Cues are in `src/audio/SoundEngine.ts`, using OGGs from `../GameMusic/ogg/` (21 MB, Vorbis q5). They're encoded
+  from the WAV masters in `../GameMusic/wav/` (184 MB), rendered from the HTML studios in `~/Music`. The masters
+  aren't packaged; keep them for the album release.
+  - Each stage start: a random stage song, never the same twice in a row. If one ends mid-stage, another follows.
+  - Bone Crusher: Sector 7. YesChef: Yes Chef. Both loop for the whole fight.
+  - Credits: `playCreditsMusic()` plays Twin Valkyrie once. Nothing calls it until the credits exist.
+- Song picks must stay on `Math.random`, never `this.rng`, or replays stop verifying.
 
 ## Optional polish (not requested yet)
 

@@ -4,6 +4,11 @@ A dwarf-mining pickaxe-lobbing game built on [Excalibur.js](https://excaliburjs.
 axe at the ore, earn KII, dodge the birds, and survive two boss fights: **Bone Crusher**, a
 60 lb Staffordshire terrier, and **YesChef**, a chef with a whip of a braid.
 
+## Status
+
+**v1.1 alpha: live, in playtesting, not gold.** The game and its payout server are live and pay real KII,
+but it's still being tested, so expect bugs and changes.
+
 ## Play on Windows
 
 1. Install [Google Chrome](https://www.google.com/chrome/) if it isn't already installed.
@@ -45,8 +50,8 @@ Land 10 hits to win. A hit you take, including from your own swatted-back axe, k
 
 ## Building from source
 
-The build expects the background art (`bg1.png` to `bg10.png`) and the soundtrack
-(`Coelestis/ogg/`) in the parent folder. Those aren't in this repo.
+The build expects the background art (`bg1.png` to `bg10.png`) and the gameplay music
+(`GameMusic/ogg/`) in the parent folder. Those aren't in this repo.
 
 ```sh
 node build.mjs          # bundles src/ into dist/bundle.js
@@ -59,7 +64,3 @@ node test_bundle.mjs    # headless game tests
 - `tools/slice_boss_sheet.py` slices a green-screen sprite sheet into boss animation
   strips. See `assets/reference/BOSS_SPRITE_PROMPTS.md`.
 - `tools/sim_boss_fights.mjs` simulates boss fights for balance testing.
-
-## Credits
-
-The soundtrack is "Coelestis" by Murderface Records.

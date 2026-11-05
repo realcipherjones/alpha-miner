@@ -1,14 +1,18 @@
 /**
  * SoundEngine.ts
  *
- * Web Audio API procedural synthesizer & Murderface Records "Coelestis" Jukebox
- * for the Dwarf KII Platformer.
+ * Web Audio API procedural synthesizer & gameplay music player for the Dwarf KII Platformer.
  *
  * Zero-dependency Web Audio synthesizers faithfully ported from
  * dwarf_pickaxe_tosser_maps_1_2_3.html with added platformer sound effects
- * (jump, land, step), plus an HTML5 Audio Jukebox for streaming Murderface
- * Records' 7-track release "Coelestis" (.ogg format).
+ * (jump, land, step).
+ *
+ * Gameplay music (stage, boss, credits .ogg cues) plays on one HTML5 audio element, so a cue
+ * replaces whatever is playing and two songs can never overlap. Cues are presentation only:
+ * nothing here may touch the simulation or its seeded RNG, or replays stop verifying.
  */
+
+import type { BossKind } from '../scenes/BossFight.ts';
 
 export interface TrackInfo {
   index: number;
@@ -32,21 +36,38 @@ export interface SoundEngineOptions {
 
 export type TrackChangeCallback = (title: string, isPlaying: boolean) => void;
 
-// Album order and metadata copied from the Vorbis tags in Coelestis/ogg/*.ogg
-// (browsers can't read local file tags over file://, so they're mirrored here).
-const COELESTIS_ARTIST = 'Murderface Records';
-const COELESTIS_ALBUM = 'Coelestis';
-const COELESTIS_YEAR = '2025';
+export type GameMusicCue = 'stage' | 'boss' | 'credits';
 
-export const COELESTIS_TRACKS: ReadonlyArray<{ id: string; trackNo: number; title: string; durationSec: number; fileName: string }> = [
-  { id: 'tess-dream', trackNo: 1, title: "Tess' Dream", durationSec: 292.5, fileName: "Tess' Dream.ogg" },
-  { id: 'valence', trackNo: 2, title: 'Valence', durationSec: 300.75, fileName: 'Valence.ogg' },
-  { id: 'seahorse', trackNo: 3, title: 'Seahorse', durationSec: 168.0, fileName: 'Seahorse.ogg' },
-  { id: 'ascent', trackNo: 4, title: 'Ascent', durationSec: 254.67, fileName: 'Ascent.ogg' },
-  { id: '6th-death', trackNo: 5, title: '6th Death', durationSec: 176.91, fileName: '6th death.ogg' },
-  { id: 'dfd', trackNo: 6, title: 'DFD', durationSec: 499.73, fileName: 'DFD.ogg' },
-  { id: 'the-chemist-outro', trackNo: 77, title: 'The Chemist - Outro', durationSec: 118.36, fileName: 'The Chemist - Outro.ogg' }
+interface GameTrack {
+  trackNo: number;
+  id: string;
+  title: string;
+  durationSec: number;
+  fileName: string;
+  cue: GameMusicCue;
+}
+
+const GAME_MUSIC_ARTIST = 'Alpha Miner';
+const GAME_MUSIC_ALBUM = 'Game Soundtrack';
+const GAME_MUSIC_YEAR = '2026';
+
+export const STAGE_TRACKS: ReadonlyArray<GameTrack> = [
+  { trackNo: 1, id: '12-bit-concrete', title: '12-Bit Concrete', durationSec: 135.65, fileName: '12-bit-concrete.ogg', cue: 'stage' },
+  { trackNo: 2, id: 'cathedral-of-echoes', title: 'Cathedral of Echoes', durationSec: 132, fileName: 'cathedral-of-echoes.ogg', cue: 'stage' },
+  { trackNo: 3, id: 'children-of-the-obsidian-sun', title: 'Children of the Obsidian Sun', durationSec: 90, fileName: 'children-of-the-obsidian-sun.ogg', cue: 'stage' },
+  { trackNo: 4, id: 'chrome-cranium', title: 'Chrome Cranium', durationSec: 210, fileName: 'chrome-cranium.ogg', cue: 'stage' },
+  { trackNo: 5, id: 'crenshaw-slauson', title: 'Crenshaw Slauson', durationSec: 90, fileName: 'crenshaw-slauson.ogg', cue: 'stage' },
+  { trackNo: 6, id: 'flashtime-in-queens', title: 'Flashtime in Queens', durationSec: 162, fileName: 'flashtime-in-queens.ogg', cue: 'stage' }
 ];
+
+export const BOSS_TRACKS: Readonly<Record<BossKind, GameTrack>> = {
+  dog: { trackNo: 7, id: 'sector-7', title: 'Sector 7', durationSec: 90, fileName: 'sector-7.ogg', cue: 'boss' },
+  son: { trackNo: 8, id: 'yes-chef', title: 'Yes Chef', durationSec: 85.03, fileName: 'yes-chef.ogg', cue: 'boss' }
+};
+
+export const CREDITS_TRACK: GameTrack = {
+  trackNo: 9, id: 'twin-valkyrie', title: 'Twin Valkyrie', durationSec: 252, fileName: 'twin-valkyrie.ogg', cue: 'credits'
+};
 
 export class SoundEngine {
   private audioCtx: AudioContext | null = null;
@@ -58,11 +79,13 @@ export class SoundEngine {
   private sfxVolumeLevel: number = 1.0;
   private musicVolumeLevel: number = 0.7;
 
-  private musicBasePath: string = '../Coelestis/ogg';
+  private musicBasePath: string = '../GameMusic/ogg';
   private audioElement: HTMLAudioElement | null = null;
-  private currentTrackIndex: number = 0;
   private isPlayingMusicState: boolean = false;
-  private pendingPlayIndex: number | null = null;
+
+  private currentGameTrack: GameTrack | null = null;
+  private pendingGameTrack: GameTrack | null = null;
+  private lastStageTrack: GameTrack | null = null;
 
   private trackChangeListeners: TrackChangeCallback[] = [];
   private interactionListenersAttached: boolean = false;
@@ -126,10 +149,10 @@ export class SoundEngine {
       ctx.resume().catch(() => {});
     }
 
-    if (this.audioElement && this.pendingPlayIndex !== null) {
-      const idx = this.pendingPlayIndex;
-      this.pendingPlayIndex = null;
-      this.playTrack(idx).catch(() => {});
+    if (this.audioElement && this.pendingGameTrack) {
+      const track = this.pendingGameTrack;
+      this.pendingGameTrack = null;
+      this.startGameTrack(track).catch(() => {});
     }
   }
 
@@ -507,7 +530,7 @@ export class SoundEngine {
   }
 
   // =========================================================================
-  // 4. Murderface Records "Coelestis" Jukebox
+  // 4. Gameplay Music
   // =========================================================================
 
   private initAudioElement(): void {
@@ -518,14 +541,17 @@ export class SoundEngine {
       this.audioElement.preload = 'auto';
       this.audioElement.volume = this.isMusicMuted ? 0 : this.musicVolumeLevel;
 
-      // Automatically advance to the next track on song completion (album loops)
+      // Song finished: a stage keeps going on another stage song, and credits just end.
+      // Boss songs set .loop, so they never fire this.
       this.audioElement.addEventListener('ended', () => {
-        this.nextTrack().catch(() => {});
+        if (this.currentGameTrack?.cue === 'stage') {
+          this.startGameTrack(this.pickStageTrack()).catch(() => {});
+        }
       });
 
       this.audioElement.addEventListener('playing', () => {
         this.isPlayingMusicState = true;
-        this.pendingPlayIndex = null;
+        this.pendingGameTrack = null;
         this.consecutiveTrackErrors = 0;
         this.notifyTrackChange();
       });
@@ -543,8 +569,9 @@ export class SoundEngine {
         this.isPlayingMusicState = false;
         this.consecutiveTrackErrors += 1;
         this.notifyTrackChange();
-        if (this.consecutiveTrackErrors < COELESTIS_TRACKS.length) {
-          this.nextTrack().catch(() => {});
+        // A bad stage song falls through to another one. A boss song has no substitute.
+        if (this.currentGameTrack?.cue === 'stage' && !this.hasMusicLoadFailed()) {
+          this.startGameTrack(this.pickStageTrack()).catch(() => {});
         }
       });
     } catch {
@@ -552,41 +579,25 @@ export class SoundEngine {
     }
   }
 
-  public setMusicBasePath(basePath: string): void {
-    this.musicBasePath = basePath;
-  }
-
-  public getMusicBasePath(): string {
-    return this.musicBasePath;
-  }
-
-  public getTracks(): TrackInfo[] {
-    const cleanBase = this.musicBasePath.replace(/\/+$/, '');
-    return COELESTIS_TRACKS.map((t, idx) => ({
-      index: idx,
-      id: t.id,
-      trackNo: t.trackNo,
-      title: t.title,
-      artist: COELESTIS_ARTIST,
-      album: COELESTIS_ALBUM,
-      year: COELESTIS_YEAR,
-      durationSec: t.durationSec,
-      fileName: t.fileName,
-      relativePath: `${cleanBase}/${t.fileName}`
-    }));
-  }
-
-  public getCurrentTrack(): TrackInfo {
-    return this.getTracks()[this.currentTrackIndex];
-  }
-
-  public getCurrentTrackIndex(): number {
-    return this.currentTrackIndex;
+  public getCurrentTrack(): TrackInfo | null {
+    const game = this.currentGameTrack;
+    if (!game) return null;
+    return {
+      index: game.trackNo - 1,
+      id: game.id,
+      trackNo: game.trackNo,
+      title: game.title,
+      artist: GAME_MUSIC_ARTIST,
+      album: GAME_MUSIC_ALBUM,
+      year: GAME_MUSIC_YEAR,
+      durationSec: game.durationSec,
+      fileName: game.fileName,
+      relativePath: `${this.musicBasePath.replace(/\/+$/, '')}/${game.fileName}`
+    };
   }
 
   public getCurrentTrackTitle(): string {
-    const track = COELESTIS_TRACKS[this.currentTrackIndex];
-    return track ? track.title : 'Unknown Track';
+    return this.currentGameTrack?.title ?? 'Unknown Track';
   }
 
   public isPlayingMusic(): boolean {
@@ -595,16 +606,17 @@ export class SoundEngine {
 
   /** True while the browser is blocking autoplay and music is waiting for a click/keypress. */
   public isAwaitingGesture(): boolean {
-    return this.pendingPlayIndex !== null;
+    return this.pendingGameTrack !== null;
   }
 
-  /** True when every track failed to load (e.g. the Coelestis folder is missing). */
+  /** True when music has nothing left to try (e.g. the GameMusic folder is missing). */
   public hasMusicLoadFailed(): boolean {
-    return this.consecutiveTrackErrors >= COELESTIS_TRACKS.length;
+    const attempts = this.currentGameTrack?.cue === 'stage' ? STAGE_TRACKS.length : 1;
+    return this.consecutiveTrackErrors >= attempts;
   }
 
   public getPlaybackTime(): { current: number; duration: number } {
-    const fallback = COELESTIS_TRACKS[this.currentTrackIndex]?.durationSec || 0;
+    const fallback = this.currentGameTrack?.durationSec ?? 0;
     if (!this.audioElement) return { current: 0, duration: fallback };
     const d = this.audioElement.duration;
     return {
@@ -613,60 +625,59 @@ export class SoundEngine {
     };
   }
 
-  /** Starts the album from the current track; queues for the first gesture if autoplay is blocked. */
-  public async startPlaylist(): Promise<void> {
-    await this.playTrack(this.currentTrackIndex);
+  /** A stage just started: play a stage song, never the same one twice in a row. */
+  public playStageMusic(): void {
+    this.consecutiveTrackErrors = 0;
+    this.startGameTrack(this.pickStageTrack()).catch(() => {});
   }
 
-  /**
-   * Plays a track by index from the Coelestis album.
-   * Handles browser autoplay rejection gracefully by queueing for first gesture.
-   */
-  public async playTrack(index: number): Promise<void> {
-    if (index < 0 || index >= COELESTIS_TRACKS.length) {
-      index = 0;
-    }
-    this.currentTrackIndex = index;
-    const track = COELESTIS_TRACKS[this.currentTrackIndex];
-    if (!track) return;
+  /** A boss fight just started: play that boss's song on a loop until the next cue. */
+  public playBossMusic(kind: BossKind): void {
+    this.consecutiveTrackErrors = 0;
+    this.startGameTrack(BOSS_TRACKS[kind]).catch(() => {});
+  }
 
+  /** For the credits screen. Nothing calls this yet because the game has no credits. */
+  public playCreditsMusic(): void {
+    this.consecutiveTrackErrors = 0;
+    this.startGameTrack(CREDITS_TRACK).catch(() => {});
+  }
+
+  /** Math.random on purpose: this.rng belongs to the simulation and music must not draw from it. */
+  private pickStageTrack(): GameTrack {
+    const pool = STAGE_TRACKS.filter((t) => t !== this.lastStageTrack);
+    const track = pool[Math.floor(Math.random() * pool.length)];
+    this.lastStageTrack = track;
+    return track;
+  }
+
+  private async startGameTrack(track: GameTrack): Promise<void> {
     if (!this.audioElement) {
       this.initAudioElement();
     }
     if (!this.audioElement) return;
 
-    const cleanBase = this.musicBasePath.replace(/\/+$/, '');
-    const trackUrl = `${cleanBase}/${encodeURIComponent(track.fileName)}`;
+    this.currentGameTrack = track;
+    this.pendingGameTrack = null;
+    this.audioElement.loop = track.cue === 'boss';
 
+    const cleanBase = this.musicBasePath.replace(/\/+$/, '');
     try {
-      this.audioElement.src = trackUrl;
+      this.audioElement.src = `${cleanBase}/${encodeURIComponent(track.fileName)}`;
       this.audioElement.volume = this.isMusicMuted ? 0 : this.musicVolumeLevel;
-      const playPromise = this.audioElement.play();
-      if (playPromise !== undefined) {
-        await playPromise;
-        this.isPlayingMusicState = true;
-        this.pendingPlayIndex = null;
-        this.notifyTrackChange();
-      }
+      await this.audioElement.play();
+      this.isPlayingMusicState = true;
+      this.notifyTrackChange();
     } catch (err) {
       // Only an autoplay block should wait for a gesture. Load failures are handled by the
-      // 'error' listener, and AbortError just means a newer track replaced this one.
+      // 'error' listener, and AbortError just means a newer cue replaced this one, so queue
+      // the current cue rather than the one this call started with.
       if ((err as { name?: string })?.name === 'NotAllowedError') {
-        this.pendingPlayIndex = index;
+        this.pendingGameTrack = this.currentGameTrack;
       }
       this.isPlayingMusicState = false;
       this.notifyTrackChange();
     }
-  }
-
-  public async nextTrack(): Promise<void> {
-    const nextIdx = (this.currentTrackIndex + 1) % COELESTIS_TRACKS.length;
-    await this.playTrack(nextIdx);
-  }
-
-  public async prevTrack(): Promise<void> {
-    const prevIdx = (this.currentTrackIndex - 1 + COELESTIS_TRACKS.length) % COELESTIS_TRACKS.length;
-    await this.playTrack(prevIdx);
   }
 
   public pauseMusic(): void {
@@ -678,16 +689,13 @@ export class SoundEngine {
   }
 
   public async resumeMusic(): Promise<void> {
-    if (this.audioElement) {
-      try {
-        await this.audioElement.play();
-        this.isPlayingMusicState = true;
-        this.notifyTrackChange();
-      } catch {
-        this.pendingPlayIndex = this.currentTrackIndex;
-      }
-    } else {
-      await this.playTrack(this.currentTrackIndex);
+    if (!this.audioElement) return;
+    try {
+      await this.audioElement.play();
+      this.isPlayingMusicState = true;
+      this.notifyTrackChange();
+    } catch {
+      this.pendingGameTrack = this.currentGameTrack;
     }
   }
 

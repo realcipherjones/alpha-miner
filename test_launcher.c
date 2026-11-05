@@ -145,13 +145,13 @@ void ExitProcess(D code){
  if(!strcmp(mode,"write-fail")){
   assert(code==1&&files==1&&!launched&&!desktopShortcut);
  }else if(!strcmp(mode,"missing-chrome")){
-  assert(code==1&&files==63&&!launched&&!desktopShortcut);
+  assert(code==1&&files==65&&!launched&&!desktopShortcut);
  }else if(!strcmp(mode,"extract")){
-  assert(!code&&files==63&&dirs>10&&bytes>65000000&&!launched&&!desktopShortcut);
+  assert(!code&&files==65&&dirs>10&&bytes>30000000&&!launched&&!desktopShortcut);
  }else if(!strcmp(mode,"install")){
-  assert(!code&&files==63&&dirs>10&&bytes>65000000&&!launched&&desktopShortcut==1&&startMenuShortcut==1);
+  assert(!code&&files==65&&dirs>10&&bytes>30000000&&!launched&&desktopShortcut==1&&startMenuShortcut==1);
  }else{
-  assert(!code&&files==63&&dirs>10&&bytes>65000000&&launched==1&&desktopShortcut==1&&startMenuShortcut==1);
+  assert(!code&&files==65&&dirs>10&&bytes>30000000&&launched==1&&desktopShortcut==1&&startMenuShortcut==1);
  }
  printf("PASS launcher %s: %d filesWritten, %d dirsCreated, %llu bytes, desktopShortcut=%d, startMenuShortcut=%d, launch=%d\n",
         mode,files,dirs,bytes,desktopShortcut,startMenuShortcut,launched);

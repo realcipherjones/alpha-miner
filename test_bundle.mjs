@@ -7,6 +7,7 @@ import { fileURLToPath } from 'node:url';
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const bundleCode = fs.readFileSync(path.join(__dirname, 'dist/bundle.js'), 'utf8');
 
+const playedUrls = [];
 const canvasCtx = new Proxy({}, {
   get: (o, k) => k in o ? o[k] : () => ({ addColorStop() {}, width: 100 }),
   set: (o, k, v) => (o[k] = v, true)
@@ -108,8 +109,8 @@ const sandbox = {
       this.muted = false;
       this.paused = true;
     }
-    addEventListener() {}
-    play() { this.paused = false; return Promise.resolve(); }
+    addEventListener(type, fn) { (this.listeners ||= {})[type] = fn; }
+    play() { this.paused = false; playedUrls.push(this.src); return Promise.resolve(); }
     pause() { this.paused = true; }
     load() {}
   },
@@ -171,11 +172,75 @@ for (let m = 1; m <= 10; m++) {
   controller.platformerRun(0);
 }
 
-// 5. Verify Murderface Records Coelestis Jukebox tracks (7 OGG tracks)
-assert.equal(soundEngine.getTracks().length, 7, 'Coelestis Jukebox should have all 7 tracks');
-assert.equal(soundEngine.getCurrentTrackTitle(), "Tess' Dream");
-await soundEngine.nextTrack();
-assert.equal(soundEngine.getCurrentTrackTitle(), 'Valence');
+// 5a. Gameplay music cues
+const audio = soundEngine.audioElement;
+const lastUrl = () => playedUrls[playedUrls.length - 1];
+const STAGE_FILES = ['12-bit-concrete', 'cathedral-of-echoes', 'children-of-the-obsidian-sun', 'chrome-cranium', 'crenshaw-slauson', 'flashtime-in-queens'].map((n) => `../GameMusic/ogg/${n}.ogg`);
+
+// A stage start plays a stage song, and consecutive stages never repeat one
+controller.restartRun();
+assert.ok(STAGE_FILES.includes(lastUrl()), `run start should cue a stage song, got ${lastUrl()}`);
+assert.equal(audio.loop, false);
+const heard = new Set([lastUrl()]);
+for (let i = 0; i < 200; i++) {
+  const before = lastUrl();
+  const stage = controller.stage;
+  controller.advanceStage();
+  assert.equal(controller.stage, stage + 1);
+  assert.ok(STAGE_FILES.includes(lastUrl()), `stage start should cue a stage song, got ${lastUrl()}`);
+  assert.notEqual(lastUrl(), before, 'the same stage song should not play twice in a row');
+  heard.add(lastUrl());
+}
+assert.equal(heard.size, STAGE_FILES.length, 'all 6 stage songs should come up');
+
+// Each boss has its own looping song, and the next stage goes back to stage music
+controller.startBossFight('dog');
+assert.equal(lastUrl(), '../GameMusic/ogg/sector-7.ogg');
+assert.equal(audio.loop, true);
+assert.equal(soundEngine.getCurrentTrackTitle(), 'Sector 7');
+controller.startBossFight('son');
+assert.equal(lastUrl(), '../GameMusic/ogg/yes-chef.ogg');
+assert.equal(audio.loop, true);
+controller.advanceStage();
+assert.ok(STAGE_FILES.includes(lastUrl()), 'the stage after a boss should cue stage music');
+assert.equal(audio.loop, false);
+
+// A stage song that ends rolls into a different one, and a missing one is skipped
+let was = lastUrl();
+audio.listeners.ended();
+assert.ok(STAGE_FILES.includes(lastUrl()) && lastUrl() !== was, 'a finished stage song should roll into another');
+was = lastUrl();
+audio.listeners.error();
+assert.ok(STAGE_FILES.includes(lastUrl()) && lastUrl() !== was, 'a missing stage song should be skipped');
+assert.equal(soundEngine.hasMusicLoadFailed(), false);
+for (let i = 0; i < 10; i++) audio.listeners.error();
+assert.equal(soundEngine.hasMusicLoadFailed(), true, 'a missing music folder should stop retrying and report it');
+const attempts = playedUrls.length;
+audio.listeners.error();
+assert.equal(playedUrls.length, attempts, 'no retries once failed');
+controller.advanceStage();
+assert.equal(soundEngine.hasMusicLoadFailed(), false, 'each new cue gets a fresh try');
+
+// Credits are ready for when the credits screen exists, and play once
+soundEngine.playCreditsMusic();
+assert.equal(lastUrl(), '../GameMusic/ogg/twin-valkyrie.ogg');
+assert.equal(audio.loop, false);
+const creditsPlays = playedUrls.length;
+audio.listeners.ended();
+assert.equal(playedUrls.length, creditsPlays, 'credits should stop at the end, not roll into other music');
+
+// A blocked autoplay waits for the first click or keypress, then plays the current cue
+const realPlay = audio.play;
+audio.play = () => Promise.reject(Object.assign(new Error('blocked'), { name: 'NotAllowedError' }));
+soundEngine.playBossMusic('son');
+await new Promise((r) => setImmediate(r));
+assert.equal(soundEngine.isAwaitingGesture(), true);
+audio.play = realPlay;
+soundEngine.unlockAudio();
+await new Promise((r) => setImmediate(r));
+assert.equal(soundEngine.isAwaitingGesture(), false);
+assert.equal(lastUrl(), '../GameMusic/ogg/yes-chef.ogg');
+assert.equal(soundEngine.isPlayingMusic(), true);
 
 // 6. Gamepad support
 const tick = (n = 1) => { for (let i = 0; i < n; i++) { nowMs += 1000 / 60; animFrameCallback(nowMs); } };
@@ -494,4 +559,4 @@ assert.equal(controller.pendingBossKind(), 'dog', 'A new run goes back to the do
 assert.equal(controller.bossEncounters.dog, lifetimeDogFights, 'Saved encounters survive a new run (they decide birds)');
 controller.score = 0;
 
-console.log('✅ PASS: Bundle verified across all 10 maps in both MANUAL_FAUCET & SIDE_SCROLLER modes, Half-Gravity Space physics, KII 128-bit BigInt Dual-Ledger, Coelestis 7-track Jukebox, and gamepad controls!');
+console.log('✅ PASS: Bundle verified across all 10 maps in both MANUAL_FAUCET & SIDE_SCROLLER modes, Half-Gravity Space physics, KII 128-bit BigInt Dual-Ledger, stage and boss music cues, and gamepad controls!');
