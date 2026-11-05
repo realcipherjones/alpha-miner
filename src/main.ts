@@ -6,7 +6,7 @@
  * and ExcaliburGameController with the responsive HTML HUD controls:
  * - Manual Faucet (Arena) mode only; SIDE_SCROLLER is kept internally (e.g. boss fights) but not player-selectable
  * - KII Ledger Dual-Ledger HUD (Clean, Quarantined, Raw 10^17 units, Mainnet Cash-Out Store)
- * - Murderface Records "Coelestis" Jukebox Bar (Cipher Jones OST)
+ * - Now-playing music bar
  * - Bottom Control Deck (Sliders, presets, footwork, and mobile touch platformer buttons)
  *
  * Compatible with Node v24 `--experimental-strip-types`.
@@ -27,7 +27,7 @@ import { PayoutClient, PayoutError } from './net/PayoutClient.ts';
 function initApp(): void {
   // 1. Initialize Audio Engine & KII Dual-Ledger
   const soundEngine = new SoundEngine({
-    musicBasePath: '../Coelestis/ogg',
+    musicBasePath: '../GameMusic/ogg',
     initialMusicVolume: 0.7,
     initialSfxVolume: 1.0
   });
@@ -651,7 +651,7 @@ function initApp(): void {
   });
 
   // -------------------------------------------------------------------------
-  // 6. Murderface Records "Coelestis" Jukebox Integration
+  // 6. Now-Playing Music Bar
   // -------------------------------------------------------------------------
 
   const formatTime = (sec: number): string => {
@@ -659,9 +659,10 @@ function initApp(): void {
     return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
   };
 
-  // Display-only now-playing readout; the album autoplays and loops on its own.
+  // Display-only now-playing readout; the controller cues stage and boss music.
   soundEngine.onTrackChange((title, isPlaying) => {
     const track = soundEngine.getCurrentTrack();
+    if (!track) return;
     if (jukeboxTrackNo) jukeboxTrackNo.textContent = String(track.trackNo).padStart(2, '0');
     if (jukeboxTrackTitle) jukeboxTrackTitle.textContent = title;
     if (jukeboxTrackMeta) jukeboxTrackMeta.textContent = `${track.artist} · ${track.album} · ${track.year}`;
@@ -717,9 +718,6 @@ function initApp(): void {
   };
   bindVolumeSlider(sliderMusicVolume, musicVolumeReadout, savedVolumes.music ?? 0.7, (v) => soundEngine.setMusicVolume(v));
   bindVolumeSlider(sliderSfxVolume, sfxVolumeReadout, savedVolumes.sfx ?? 1.0, (v) => soundEngine.setSfxVolume(v));
-
-  // Try to autoplay right away; if the browser blocks it, the first click/keypress starts it.
-  soundEngine.startPlaylist().catch(() => {});
 
   if (payout.enabled) {
     if (payout.account) void startVerifiedRun();

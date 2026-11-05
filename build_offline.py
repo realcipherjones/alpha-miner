@@ -2,7 +2,7 @@
 """
 build_offline.py
 
-Packages α Alpha Miner (Excalibur.js + KII Dual-Ledger + Coelestis OST)
+Packages α Alpha Miner (Excalibur.js + KII Dual-Ledger + game music)
 into a self-contained offline payload (`build/payload.bin` and `build/version.h`) for
 the Windows x64 Chrome standalone launcher (`launcher.c`).
 """
@@ -236,13 +236,13 @@ packaged_bundle = (
     .replace('`../bg${', '`./bg${')
     .replace("'../bg", "'./bg")
     .replace('"../bg', '"./bg')
-    .replace("'../Coelestis/ogg'", "'./Coelestis/ogg'")
-    .replace('"../Coelestis/ogg"', '"./Coelestis/ogg"')
+    .replace("'../GameMusic/ogg'", "'./GameMusic/ogg'")
+    .replace('"../GameMusic/ogg"', '"./GameMusic/ogg"')
 )
 
 excalibur_bytes = (root / 'vendor/excalibur.min.js').read_bytes()
 
-# 4. Assemble all payload files (62 with the boss sprite strips)
+# 4. Assemble all payload files (64 with the boss sprite strips and game music)
 files = [
     ('index.html', packaged_html.encode('utf-8')),
     ('icon.ico', ico_bytes),
@@ -262,19 +262,21 @@ for i in range(1, 11):
     bg_path = docs_dir / f'bg{i}.png'
     files.append((f'bg{i}.png', bg_path.read_bytes()))
 
-# Add all 7 Murderface Records "Coelestis" OGG tracks
-coelestis_tracks = [
-    "Tess' Dream.ogg",
-    "Valence.ogg",
-    "Seahorse.ogg",
-    "Ascent.ogg",
-    "6th death.ogg",
-    "DFD.ogg",
-    "The Chemist - Outro.ogg"
+# Add the 9 gameplay music cues (stage, boss, credits)
+game_music_tracks = [
+    '12-bit-concrete.ogg',
+    'cathedral-of-echoes.ogg',
+    'children-of-the-obsidian-sun.ogg',
+    'chrome-cranium.ogg',
+    'crenshaw-slauson.ogg',
+    'flashtime-in-queens.ogg',
+    'sector-7.ogg',
+    'yes-chef.ogg',
+    'twin-valkyrie.ogg'
 ]
-for track_name in coelestis_tracks:
-    track_path = docs_dir / 'Coelestis' / 'ogg' / track_name
-    files.append((f'Coelestis/ogg/{track_name}', track_path.read_bytes()))
+for track_name in game_music_tracks:
+    track_path = docs_dir / 'GameMusic' / 'ogg' / track_name
+    files.append((f'GameMusic/ogg/{track_name}', track_path.read_bytes()))
 
 # Write staged files to build/game/ and pack into build/payload.bin
 blob = bytearray()

@@ -556,6 +556,7 @@ export class ExcaliburGameController {
     this.stage += 1;
     this.generateArenaForStage();
     this.loadMap(nextMapId);
+    this.soundEngine.playStageMusic();
     this.runCheckpoints.push([this.stage, this.simTick, this.simDigest()]);
 
     // Every 50th stage: offer to cash out (burn) the KII balance for free lobs
@@ -616,6 +617,7 @@ export class ExcaliburGameController {
     this.generateArenaForStage();
     this.loadMap(this.mapOrder[0]);
     if (options.debug?.boss) this.startBossFight(options.debug.boss);
+    else this.soundEngine.playStageMusic();
   }
 
   /** Logs player actions with the simulation tick they landed on, at the methods every input path calls. */
@@ -784,6 +786,7 @@ export class ExcaliburGameController {
     this.bossFightsThisRun += 1;
     this.bossEncounters[kind] += 1;
     this.saveBossEncounters();
+    this.soundEngine.playBossMusic(kind);
     const def = BOSS_DEFS[kind];
     const encounter = Math.max(1, this.bossEncounters[kind]);
     const floorY = this.getArenaLevel().floorY;
