@@ -1,9 +1,11 @@
-# Alpha Miner: where we left off (2026-11-05)
+# Alpha Miner: where we left off (2026-11-07)
 
 ## State of the builds
 
-`Alpha Miner.exe` is v1.1 alpha (SHA256 `6b0864e692b0c00d246776815323130f9fdb2f840d378f6725b43e80ab865c23`): live and in playtesting, not gold. It's the v0.99b-alpha game
-with only the music changed. The countdown after beating a boss is still 3 s, against 5 s after a stage; should it be
+`Alpha Miner.exe` is v1.2 alpha (SHA256 `575a17409ce59d28061ac1814f550f12fc8ee15309213a23bb8e53bac0522b2d`): live and in playtesting, not gold. Beta starts once
+outside playtesters are on it. v1.2 only changes visuals: the backgrounds are muted (68% saturation, 75% brightness,
+1.25 px blur, baked once at load in `bakeMutedBackground`) so the sprites stand out, and the aim dots are white with
+a dark outline again. Keep that outline; it regressed once before. v1.1 changed only the music. The countdown after beating a boss is still 3 s, against 5 s after a stage; should it be
 5 s too?
 
 To package: `./build_exe.sh`. The launcher tests expect 65 files (`test_launcher.c`).
@@ -42,8 +44,8 @@ To package: `./build_exe.sh`. The launcher tests expect 65 files (`test_launcher
 - Every run starts with an empty bank and no free lobs. Only KII earned in that verified run can be paid.
 - Payout service: `server/` (see `server/README.md`). Running at https://miner.murderfacerecords.com on the game box.
   It's in `live` mode and pays real KII (`/api/leaderboard` reported this on 2026-11-05).
-  v1.1 alpha didn't redeploy the server, so it still runs the v0.99b-alpha bundle. Gameplay didn't change, and
-  replay logs matched and verified both ways between the two bundles. Sync the bundle on the next server deploy.
+  v1.1 and v1.2 alpha didn't redeploy the server, so it still runs the v0.99b-alpha bundle. Gameplay didn't change,
+  and v1.2 replay logs verify with identical digests on the v0.99b-alpha bundle. Sync the bundle on the next server deploy.
 
 ## Tools
 

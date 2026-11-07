@@ -6,7 +6,7 @@ axe at the ore, earn KII, dodge the birds, and survive two boss fights: **Bone C
 
 ## Status
 
-**v1.1 alpha: live, in playtesting, not gold.** The game and its payout server are live and pay real KII,
+**v1.2 alpha: live, in playtesting, not gold.** The game and its payout server are live and pay real KII,
 but it's still being tested, so expect bugs and changes.
 
 ## Play on Windows
