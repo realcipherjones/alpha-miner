@@ -292,6 +292,8 @@ export class ExcaliburGameController {
 
   // Background Image Cache
   private bgImages: Map<number, HTMLImageElement> = new Map();
+  // Muted copies of bgImages (see bakeMutedBackground); drawn in their place once ready
+  private bgBaked: Map<number, HTMLCanvasElement> = new Map();
 
   // Animation frame request handle
   private animFrameId: number | null = null;
@@ -368,9 +370,34 @@ export class ExcaliburGameController {
   private preloadBackgrounds(): void {
     for (let i = 1; i <= 10; i++) {
       const img = new Image();
+      img.onload = () => this.bakeMutedBackground(i, img);
       img.src = `../bg${i}.png`;
       this.bgImages.set(i, img);
     }
+  }
+
+  /**
+   * The background art predates the sprites and competes with them, so each
+   * image is desaturated, dimmed and softly blurred once at load, then reused
+   * every frame. Values were picked by eye in a side-by-side contrast test.
+   * Blur is tuned at the 645px viewport height and scaled to the source size.
+   * If the browser lacks canvas filters, the original image is used instead.
+   */
+  private bakeMutedBackground(mapId: number, img: HTMLImageElement): void {
+    const w = img.naturalWidth;
+    const h = img.naturalHeight;
+    if (!w || !h) return;
+    const canvas = document.createElement('canvas');
+    canvas.width = w;
+    canvas.height = h;
+    const bctx = canvas.getContext('2d');
+    if (!bctx || typeof bctx.filter !== 'string') return;
+    const blurPx = 1.25 * (h / this.viewportHeight);
+    bctx.filter = `saturate(68%) brightness(75%) blur(${blurPx.toFixed(2)}px)`;
+    // Overdraw past the edges so the blur doesn't darken the rim (tiles are mirrored edge to edge)
+    const pad = Math.ceil(blurPx * 3);
+    bctx.drawImage(img, -pad, -pad, w + pad * 2, h + pad * 2);
+    this.bgBaked.set(mapId, canvas);
   }
 
   private initExcaliburEngine(): void {
@@ -2042,11 +2069,13 @@ export class ExcaliburGameController {
     const isSpace = isSpaceMap(this.currentMapId);
 
     // 1. Background Image (screen space, aspect-preserving; parallax-tiled in platformer)
-    const bgImg = this.bgImages.get(this.currentMapId);
-    if (bgImg && bgImg.complete && bgImg.naturalWidth > 0) {
+    const srcImg = this.bgImages.get(this.currentMapId);
+    const bgImg: HTMLImageElement | HTMLCanvasElement | undefined =
+      this.bgBaked.get(this.currentMapId) ?? srcImg;
+    if (srcImg && bgImg && srcImg.complete && srcImg.naturalWidth > 0) {
       const vw = this.viewportWidth;
       const vh = this.viewportHeight;
-      const imgRatio = bgImg.naturalWidth / bgImg.naturalHeight;
+      const imgRatio = srcImg.naturalWidth / srcImg.naturalHeight;
       if (isTosser) {
         // Cover-fit, centered (matches original)
         let drawW = vw;
@@ -2443,6 +2472,7 @@ export class ExcaliburGameController {
     const vel = this.getLaunchVelocity(this.aimAngleDeg, this.aimPowerPct, facingRight);
     const grav = (this.mode === 'SIDE_SCROLLER' && isSpaceMap(this.currentMapId)) ? 490 : 980;
     const dt = 0.038;
+    ctx.save(); // the dot outlines set lineWidth/strokeStyle; keep them out of later drawing
 
     let px = origin.x;
     let py = origin.y;
@@ -2455,13 +2485,18 @@ export class ExcaliburGameController {
       px += pvx * dt;
       py += pvy * dt;
 
-      const alpha = 1.0 - (s / 30) * 0.75;
+      const alpha = 1.0 - (s / 30) * 0.45;
       // Aim path dots are intentionally WHITE — do not recolor (keep them distinct from gold ore/coins).
+      // The dark outline keeps them readable on light and dark backgrounds alike — do not remove it.
       ctx.fillStyle = s % 2 === 0 ? `rgba(255, 255, 255, ${alpha})` : `rgba(226, 232, 240, ${alpha})`;
       ctx.beginPath();
-      ctx.arc(px, py, 2.8 - (s / 30) * 1.5, 0, Math.PI * 2);
+      ctx.arc(px, py, 3.6 - (s / 30) * 1.4, 0, Math.PI * 2);
       ctx.fill();
+      ctx.lineWidth = 1.6;
+      ctx.strokeStyle = `rgba(2, 6, 23, ${0.85 * alpha})`;
+      ctx.stroke();
     }
+    ctx.restore();
   }
 
   private drawPlatformerMinimap(ctx: CanvasRenderingContext2D): void {
