@@ -514,11 +514,24 @@ function initApp(): void {
       runStatus.style.color = '#6ee7b7';
       runStatus.title = 'Cash-outs from this run can be paid to your wallet.';
     } else {
-      runStatus.textContent = '⚪ Offline run';
+      runStatus.textContent = payout.enabled && !payout.account ? '⚪ Offline run · claim IGN' : '⚪ Offline run';
       runStatus.style.color = '#94a3b8';
-      runStatus.title = "This run isn't verified, so it can't earn payouts.";
+      runStatus.title = payout.enabled && !payout.account
+        ? 'Click to claim an IGN so your runs can earn payouts.'
+        : "This run isn't verified, so it can't earn payouts.";
     }
+    runStatus.style.cursor = payout.enabled && !payout.account ? 'pointer' : 'default';
   };
+
+  // Skipping the claim pop-up is remembered, so the status chip is the way back to it.
+  if (runStatus) {
+    runStatus.addEventListener('click', () => {
+      if (!payout.enabled || payout.account || !registerModal) return;
+      registerError?.classList.add('hidden');
+      registerModal.classList.remove('hidden');
+      inputIgn?.focus();
+    });
+  }
 
   const startVerifiedRun = async (): Promise<void> => {
     verifiedRunId = null;
