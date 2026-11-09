@@ -1,9 +1,12 @@
-# Alpha Miner: where we left off (2026-11-07)
+# Alpha Miner: where we left off (2026-11-09)
 
 ## State of the builds
 
-`Alpha Miner.exe` is v1.2 alpha (SHA256 `575a17409ce59d28061ac1814f550f12fc8ee15309213a23bb8e53bac0522b2d`): live and in playtesting, not gold. Beta starts once
-outside playtesters are on it. v1.2 only changes visuals: the backgrounds are muted (68% saturation, 75% brightness,
+`Alpha Miner.exe` is v1.2a alpha, a bugfix (SHA256 `59bfb06532114776f39a9fb57c1884ca45d5d94c3975e7c8bdca4cf2de5b8d19`): live and in playtesting, not gold. Beta starts once
+outside playtesters are on it. v1.2a fixes a login lockout: skipping the claim-IGN pop-up was remembered forever and
+nothing reopened it, so a playtester couldn't log in. When there's no login, the "⚪ Offline run · claim IGN" chip now
+reopens the pop-up. The register pop-up still ignores the gamepad, so claiming needs keyboard and mouse.
+v1.2 only changes visuals: the backgrounds are muted (68% saturation, 75% brightness,
 1.25 px blur, baked once at load in `bakeMutedBackground`) so the sprites stand out, and the aim dots are white with
 a dark outline again. Keep that outline; it regressed once before. v1.1 changed only the music. The countdown after beating a boss is still 3 s, against 5 s after a stage; should it be
 5 s too?
